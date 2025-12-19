@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Battle City Clone</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+      const PLAYER_SPEED = 4
+      const BULLET_SPEED = 8
+      const ENEMY_COUNT = 5
+      const BRICK_WIDTH = 16
+      const STEEL_WIDTH = 16
+
+      class Entity {
+        constructor(x, y, width, height) {
+          this.x = x
+          this.y = y
+          this.width = width || 16
+          this.height = height || 16
+        }
+
+        draw(ctx) {}
+      }
+
+      class Bullet extends Entity {
+        constructor(x, y, direction) {
+          super(x, y)
+          this.direction = direction
+          this.speed = BULLET_SPEED
+
+          if (direction === 'up') {
+            this.dy = -this.speed
+          } else if (direction === 'down') {
+            this.dy = this.speed
+          } else if (direction === 'left') {
+            this.dx = -this.speed
+          } else if (direction === 'right') {
+            this.dx = this.speed
+          }
+        }
+
+        update() {
+          this.x += this.dx || 0
+          this.y += this.dy || 0
+        }
+
+        draw(ctx) {
+          ctx.fillStyle = '#fff'
+          ctx.fillRect(this.x + 3, this.y + 3, 10, 10) // Smaller than tank size
+        }
+      }
+
+      class Tank extends Entity {
+        constructor(x, y) {
+          super(x, y, 16, 16)
+          this.speed = PLAYER_SPEED
+          this.bullets = []
+          this.direction = ''
+        }
+
+        move(dx, dy) {
+          this.x += dx
+          this.y += dy
+        }
+
+        fire(direction) {
+          const newBullet = new Bullet(this.x, this.y, direction)
+          this.bullets.push(newBullet)
+        }
+
+        update() {
+          for (let i = 0; i < this.bullets.length; i++) {
+            let b = this.bullets[i]
+            b.update()
+
+            if (b.x > 600 || b.x < 0 || b.y > 400 || b.y < 0) this.bullets.splice(i--, 1)
+          }
+        }
+
+        draw(ctx) {
+          ctx.fillStyle = '#ffd700' // Yellow color
+          ctx.fillRect(this.x, this.y, this.width, this.height)
+
+          for (const bullet of this.bullets) {
+            bullet.draw(ctx)
+          }
+        }
+      }
+
+      class EnemyTank extends Tank {
+        constructor(x, y) {
+          super(x, y)
+          this.aiDirection = ['up', 'down', 'left', 'right']
+          this.currentDirIndex = Math.floor(Math.random() * 4)
+        }
+
+        update() {
+          super.update() // Update bullets
+
+          // Simple random AI logic
+          switch (this.aiDirection[this.currentDirIndex]) {
+            case 'up':
+              this.move(0, -PLAYER_SPEED)
+              break
+            case 'down':
+              this.move(0, +PLAYER_SPEED)
+              break
+            case 'left':
+              this.move(-PLAYER_SPEED, 0)
+              break
+            case 'right':
+              this.move(+PLAYER_SPEED, 0)
+              break
+          }
+
+          // Change direction randomly every few frames
+          if (Math.random() < 0.01) {
+            this.currentDirIndex = Math.floor(Math.random() * 4)
+          }
+        }
+
+        draw(ctx) {
+          ctx.fillStyle = '#b22222' // Red color
+          ctx.fillRect(this.x, this.y, this.width, this.height)
+        }
+      }
+
+      // Brick wall entity
+      class BrickWall extends Entity {
+        constructor(x, y) {
+          super(x, y, BRICK_WIDTH, BRICK_WIDTH)
+        }
+
+        draw(ctx) {
+          ctx.fillStyle = '#a52a2a' // Brown brick color
+          ctx.fillRect(this.x, this.y, this.width, this.height)
+        }
+      }
+
+      // Steel wall entity
+      class SteelWall extends Entity {
+        constructor(x, y) {
+          super(x, y, STEEL_WIDTH, STEEL_WIDTH)
+        }
+
+        draw(ctx) {
+          ctx.fillStyle = '#c0c0c0' // Gray steel color
+          ctx.fillRect(this.x, this.y, this.width, this.height)
+        }
+      }
+
+      let canvas = document.getElementById('gameCanvas')
+      let ctx = canvas.getContext('2d')
+      canvas.width = window.innerWidth
+      canvas.height = window.innerHeight
+
+      let playerTank = new Tank(canvas.width / 2, canvas.height - 32)
+      let enemyTanks = Array.from(
+        { length: ENEMY_COUNT },
+        () => new EnemyTank(Math.random() * (canvas.width - 16), Math.random() * (canvas.height - 16))
+      )
+
+      let bricks = [
+        new BrickWall(100, 100),
+        new BrickWall(150, 150),
+        new BrickWall(200, 200),
+        new BrickWall(250, 250),
+        new BrickWall(300, 300),
+        new BrickWall(350, 350),
+        new BrickWall(400, 400),
+        new BrickWall(450, 450),
+        new BrickWall(500, 500),
+        new BrickWall(550, 550),
+      ]
+
+      let steels = [new SteelWall(100, 300), new SteelWall(300, 100), new SteelWall(500, 300), new SteelWall(300, 500)]
+
+      let gameOver = false
+
+      document.addEventListener('keydown', function (e) {
+        e.preventDefault()
+        if (gameOver) return
+        if (e.keyCode === 37 || e.key === 'ArrowLeft' || e.key === 'A' || e.key === 'a')
+          playerTank.move(-playerTank.speed, 0)
+        if (e.keyCode === 38 || e.key === 'ArrowUp' || e.key === 'W' || e.key === 'w')
+          playerTank.move(0, -playerTank.speed)
+        if (e.keyCode === 39 || e.key === 'ArrowRight' || e.key === 'D' || e.key === 'd')
+          playerTank.move(playerTank.speed, 0)
+        if (e.keyCode === 40 || e.key === 'ArrowDown' || e.key === 'S' || e.key === 's')
+          playerTank.move(0, playerTank.speed)
+      })
+
+      document.addEventListener('keypress', function (e) {
+        e.preventDefault()
+        if (gameOver) return
+        if (e.key === ' ') {
+          playerTank.fire('up') // Default shooting up
+        }
+      })
+
+      // Mobile touch controls
+      let touchStartX, touchStartY
+      canvas.addEventListener('touchstart', function (event) {
+        event.preventDefault()
+        const touches = event.touches[0]
+        touchStartX = touches.clientX
+        touchStartY = touches.clientY
+      })
+
+      canvas.addEventListener('touchmove', function (event) {
+        event.preventDefault()
+        const touches = event.touches[0]
+        const deltaX = touches.clientX - touchStartX
+        const deltaY = touches.clientY - touchStartY
+
+        if (deltaX > 50 && !deltaY) playerTank.move(PLAYER_SPEED, 0)
+        if (deltaX < -50 && !deltaY) playerTank.move(-PLAYER_SPEED, 0)
+        if (deltaY > 50 && !deltaX) playerTank.move(0, PLAYER_SPEED)
+        if (deltaY < -50 && !deltaX) playerTank.move(0, -PLAYER_SPEED)
+
+        touchStartX = touches.clientX
+        touchStartY = touches.clientY
+      })
+
+      function detectCollision(entity1, entity2) {
+        return (
+          entity1.x < entity2.x + entity2.width &&
+          entity1.x + entity1.width > entity2.x &&
+          entity1.y < entity2.y + entity2.height &&
+          entity1.y + entity1.height > entity2.y
+        )
+      }
+
+      function handleCollisions() {
+        for (const enemy of enemyTanks) {
+          if (detectCollision(enemy, playerTank)) {
+            console.log('GAME OVER!')
+            gameOver = true
+          }
+        }
+
+        for (const bullet of playerTank.bullets) {
+          for (const enemy of enemyTanks) {
+            if (detectCollision(bullet, enemy)) {
+              enemyTanks.splice(enemyTanks.indexOf(enemy), 1)
+              playerTank.bullets.splice(playerTank.bullets.indexOf(bullet), 1)
+            }
+          }
+        }
+
+        for (const brick of bricks) {
+          for (const bullet of playerTank.bullets) {
+            if (detectCollision(brick, bullet)) {
+              playerTank.bullets.splice(playerTank.bullets.indexOf(bullet), 1)
+            }
+          }
+        }
+
+        for (const steel of steels) {
+          for (const bullet of playerTank.bullets) {
+            if (detectCollision(steel, bullet)) {
+              playerTank.bullets.splice(playerTank.bullets.indexOf(bullet), 1)
+            }
+          }
+        }
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        playerTank.draw(ctx)
+        enemyTanks.forEach((tank) => tank.draw(ctx))
+        bricks.forEach((wall) => wall.draw(ctx))
+        steels.forEach((wall) => wall.draw(ctx))
+
+        requestAnimationFrame(render)
+      }
+
+      function update() {
+        if (!gameOver) {
+          playerTank.update()
+          enemyTanks.forEach((tank) => tank.update())
+          handleCollisions()
+        }
+
+        setTimeout(update, 1000 / 60) // Run at ~60 FPS
+      }
+
+      render()
+      update()
+    </script>
+  </body>
+</html>

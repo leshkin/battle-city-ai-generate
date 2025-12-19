@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+    <title>Battle City — Single File</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --ui: #dfe7ef;
+        --muted: #9fb0c8;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+        color: var(--ui);
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+      #game-wrap {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      canvas {
+        background: #6aa6ff;
+        border: 6px solid #0b1220;
+        box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+        touch-action: none;
+      }
+      /* HUD */
+      .hud {
+        position: fixed;
+        left: 12px;
+        top: 12px;
+        color: var(--ui);
+        font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        font-weight: 600;
+      }
+      .hud .line {
+        margin-bottom: 6px;
+      }
+      /* mobile controls */
+      .controls {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      .dpad {
+        position: fixed;
+        left: 14px;
+        bottom: 14px;
+        width: 130px;
+        height: 130px;
+        border-radius: 12px;
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.05));
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-rows: 1fr 1fr 1fr;
+        gap: 6px;
+        padding: 10px;
+        box-sizing: border-box;
+        pointer-events: auto;
+      }
+      .dpad button {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 8px;
+        color: var(--ui);
+        font-size: 18px;
+      }
+      .dpad button:active {
+        background: rgba(255, 255, 255, 0.14);
+      }
+      .shoot {
+        position: fixed;
+        right: 18px;
+        bottom: 26px;
+        width: 84px;
+        height: 84px;
+        border-radius: 50%;
+        background: linear-gradient(180deg, #ff5e5e, #ff1e1e);
+        border: 4px solid rgba(0, 0, 0, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 20px;
+        pointer-events: auto;
+      }
+      .small-btn {
+        position: fixed;
+        right: 18px;
+        bottom: 120px;
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.06);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: auto;
+      }
+      footer {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 8px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      @media (min-width: 900px) {
+        .dpad {
+          display: none;
+        }
+        .shoot {
+          display: none;
+        }
+        .small-btn {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-wrap">
+      <canvas id="c"></canvas>
+    </div>
+    <div class="hud">
+      <div class="line" id="score">Score: 0</div>
+      <div class="line" id="lives">Lives: 3</div>
+      <div class="line" id="level">Level: 1</div>
+    </div>
+
+    <div class="controls">
+      <div class="dpad" id="dpad" aria-hidden="true">
+        <div></div>
+        <button data-dir="up">↑</button>
+        <div></div>
+        <button data-dir="left">←</button>
+        <div></div>
+        <button data-dir="right">→</button>
+        <div></div>
+        <button data-dir="down">↓</button>
+        <div></div>
+      </div>
+      <div class="shoot" id="shoot" aria-hidden="true">FIRE</div>
+      <div class="small-btn" id="pause" title="Pause">⏸</div>
+    </div>
+
+    <footer>Keyboard: Arrow keys or WASD to move, Space to fire. Mobile: d-pad + FIRE.</footer>
+
+    <script>
+      ;(function () {
+        // Minimal Battle City style single-file game
+        const canvas = document.getElementById('c')
+        const ctx = canvas.getContext('2d')
+
+        // game configuration
+        const TILE = 16 // base tile in pixels
+        const GRID_W = 26 // number of tiles horizontally
+        const GRID_H = 26 // vertically
+        const BASE_W = GRID_W * TILE
+        const BASE_H = GRID_H * TILE
+
+        // scale canvas to match device but keep integer multiples for crispness
+        function resize() {
+          const maxW = Math.min(window.innerWidth - 20, 880)
+          const maxH = Math.min(window.innerHeight - 120, 1200)
+          let scale = Math.floor(Math.min(maxW / BASE_W, maxH / BASE_H))
+          if (scale < 1) scale = 1
+          canvas.width = BASE_W * scale
+          canvas.height = BASE_H * scale
+          canvas.style.width = canvas.width + 'px'
+          canvas.style.height = canvas.height + 'px'
+          ctx.setTransform(scale, 0, 0, scale, 0, 0)
+        }
+        window.addEventListener('resize', resize)
+        resize()
+
+        // map tiles: 0 empty, 1 brick, 2 steel, 3 water, 4 grass
+        const map = new Uint8Array(GRID_W * GRID_H)
+        function idx(x, y) {
+          return y * GRID_W + x
+        }
+
+        function generateLevel() {
+          map.fill(0)
+          // border steel
+          for (let x = 0; x < GRID_W; x++) {
+            map[idx(x, 0)] = 2
+            map[idx(x, GRID_H - 1)] = 2
+          }
+          for (let y = 0; y < GRID_H; y++) {
+            map[idx(0, y)] = 2
+            map[idx(GRID_W - 1, y)] = 2
+          }
+          // random bricks
+          for (let y = 2; y < GRID_H - 2; y++) {
+            for (let x = 2; x < GRID_W - 2; x++) {
+              if (Math.random() < 0.12) map[idx(x, y)] = 1
+              else if (Math.random() < 0.02) map[idx(x, y)] = 3 // water
+              else if (Math.random() < 0.06) map[idx(x, y)] = 4 // grass
+            }
+          }
+          // create a small base area (protected) at bottom center
+          const cx = Math.floor(GRID_W / 2)
+          map[idx(cx - 1, GRID_H - 3)] = 1
+          map[idx(cx, GRID_H - 3)] = 1
+          map[idx(cx + 1, GRID_H - 3)] = 1
+          map[idx(cx - 1, GRID_H - 2)] = 2
+          map[idx(cx, GRID_H - 2)] = 0
+          map[idx(cx + 1, GRID_H - 2)] = 2
+        }
+        generateLevel()
+
+        // utility
+        function clamp(v, a, b) {
+          return Math.max(a, Math.min(b, v))
+        }
+
+        // directions
+        const DIRS = { UP: 0, RIGHT: 1, DOWN: 2, LEFT: 3 }
+        const DIR_V = [
+          [0, -1],
+          [1, 0],
+          [0, 1],
+          [-1, 0],
+        ]
+
+        // Entities
+        class Tank {
+          constructor(x, y, opts = {}) {
+            this.x = x
+            this.y = y // position in pixels
+            this.w = 14
+            this.h = 14
+            this.dir = opts.dir || DIRS.UP
+            this.color = opts.color || '#0a6'
+            this.speed = opts.speed || 0.9
+            this.lastShot = 0
+            this.cool = opts.cool || 400
+            this.isEnemy = !!opts.enemy
+            this.alive = true
+            this.respawnInv = 0
+          }
+          center() {
+            return [this.x + 8, this.y + 8]
+          }
+          tilePos() {
+            return [Math.floor((this.x + 8) / TILE), Math.floor((this.y + 8) / TILE)]
+          }
+          update(dt) {
+            if (!this.alive) return
+            if (this.respawnInv > 0) this.respawnInv -= dt
+          }
+          draw(ctx) {
+            ctx.save()
+            ctx.translate(this.x + 8, this.y + 8)
+            if (this.respawnInv > 0) ctx.globalAlpha = 0.4 + 0.6 * Math.sin(Date.now() / 80)
+            ctx.fillStyle = this.color
+            ctx.fillRect(-6, -6, 12, 12)
+            // barrel
+            ctx.fillStyle = '#222'
+            const b = 7
+            const d = this.dir
+            ctx.fillRect(DIR_V[d][0] * 3 - 2, DIR_V[d][1] * 3 - 2, 4, 4)
+            ctx.restore()
+          }
+          moveDir(d, dt) {
+            if (!this.alive) return
+            this.dir = d
+            const vx = (DIR_V[d][0] * this.speed * dt) / 16
+            const vy = (DIR_V[d][1] * this.speed * dt) / 16
+            const nx = this.x + vx
+            const ny = this.y + vy
+            if (!collideMap(nx, ny, this.w, this.h)) {
+              this.x = nx
+              this.y = ny
+            }
+          }
+          shoot() {
+            if (!this.alive) return null
+            const now = performance.now()
+            if (now - this.lastShot < this.cool) return null
+            this.lastShot = now
+            const c = this.center()
+            const b = new Bullet(c[0], c[1], this.dir, this)
+            return b
+          }
+        }
+
+        class Bullet {
+          constructor(x, y, dir, owner) {
+            this.x = x - 2
+            this.y = y - 2
+            this.dir = dir
+            this.speed = 3.2
+            this.owner = owner
+            this.alive = true
+          }
+          update(dt) {
+            if (!this.alive) return
+            this.x += (DIR_V[this.dir][0] * this.speed * dt) / 16
+            this.y += (DIR_V[this.dir][1] * this.speed * dt) / 16
+            // tile collision
+            const tx = Math.floor(this.x / TILE)
+            const ty = Math.floor(this.y / TILE)
+            if (tx < 0 || ty < 0 || tx >= GRID_W || ty >= GRID_H) {
+              this.alive = false
+              return
+            }
+            const t = map[idx(tx, ty)]
+            if (t === 1) {
+              // brick - destroy
+              map[idx(tx, ty)] = 0
+              this.alive = false
+              score += 10
+              updateHUD()
+              return
+            } else if (t === 2) {
+              // steel - bullet destroyed
+              this.alive = false
+              return
+            } else if (t === 3) {
+              // water - bullet passes slowly
+              // no-op
+            }
+          }
+          draw(ctx) {
+            if (!this.alive) return
+            ctx.fillStyle = '#fff'
+            ctx.fillRect(this.x - 1, this.y - 1, 3, 3)
+          }
+        }
+
+        // collision between rectangle and map solid tiles
+        function collideMap(x, y, w, h) {
+          const minx = Math.floor(x / TILE)
+          const miny = Math.floor(y / TILE)
+          const maxx = Math.floor((x + w - 1) / TILE)
+          const maxy = Math.floor((y + h - 1) / TILE)
+          for (let yi = miny; yi <= maxy; yi++) {
+            for (let xi = minx; xi <= maxx; xi++) {
+              if (xi < 0 || yi < 0 || xi >= GRID_W || yi >= GRID_H) return true
+              const t = map[idx(xi, yi)]
+              if (t === 1 || t === 2 || t === 3) return t === 2 || t === 1 // water acts passable for tanks
+            }
+          }
+          return false
+        }
+
+        // game state
+        let player,
+          enemies = [],
+          bullets = [],
+          score = 0,
+          lives = 3,
+          level = 1,
+          paused = false
+
+        function spawnPlayer() {
+          player = new Tank((Math.floor(GRID_W / 2) - 1) * TILE + 1, (GRID_H - 3) * TILE + 2, {
+            dir: DIRS.UP,
+            color: '#0af',
+            cool: 300,
+          })
+          player.respawnInv = 1200
+        }
+
+        function spawnEnemy() {
+          const spawnX = [1, Math.floor(GRID_W / 2) - 1, GRID_W - 3][Math.floor(Math.random() * 3)]
+          const t = new Tank(spawnX * TILE + 1, 1 * TILE + 2, {
+            dir: DIRS.DOWN,
+            color: '#f44',
+            speed: 0.6,
+            enemy: true,
+            cool: 900,
+          })
+          enemies.push(t)
+        }
+
+        function updateHUD() {
+          document.getElementById('score').textContent = 'Score: ' + score
+          document.getElementById('lives').textContent = 'Lives: ' + lives
+          document.getElementById('level').textContent = 'Level: ' + level
+        }
+
+        generateLevel()
+        spawnPlayer()
+        for (let i = 0; i < 3; i++) spawnEnemy()
+        updateHUD()
+
+        // input
+        const keys = {}
+        window.addEventListener('keydown', (e) => {
+          if (e.repeat) return
+          if (e.key === ' ') {
+            fire()
+            e.preventDefault()
+          }
+          keys[e.key.toLowerCase()] = true
+        })
+        window.addEventListener('keyup', (e) => {
+          keys[e.key.toLowerCase()] = false
+        })
+
+        // touch controls
+        const dpad = document.getElementById('dpad')
+        const shootBtn = document.getElementById('shoot')
+        const pauseBtn = document.getElementById('pause')
+        dpad.addEventListener('pointerdown', (e) => {
+          const t = e.target.closest('button')
+          if (!t) return
+          const dir = t.dataset.dir
+          touchMove(dir)
+          e.preventDefault()
+        })
+        dpad.addEventListener('pointerup', (e) => {
+          stopTouchMove()
+        })
+        dpad.addEventListener('pointercancel', stopTouchMove)
+        shootBtn.addEventListener('pointerdown', (e) => {
+          fire()
+          e.preventDefault()
+        })
+        pauseBtn.addEventListener('pointerdown', () => {
+          paused = !paused
+          pauseBtn.textContent = paused ? '▶' : '⏸'
+        })
+        let touchDir = null
+        function touchMove(dir) {
+          touchDir = dir
+        }
+        function stopTouchMove() {
+          touchDir = null
+        }
+
+        function fire() {
+          const b = player.shoot()
+          if (b) bullets.push(b)
+        }
+
+        // simple enemy AI: random movement and occasional fire
+        function updateEnemies(dt) {
+          for (const e of enemies) {
+            if (!e.alive) continue
+            if (Math.random() < 0.008) {
+              // change direction
+              e.dir = Math.floor(Math.random() * 4)
+            }
+            if (Math.random() < 0.006) {
+              const b = e.shoot()
+              if (b) bullets.push(b)
+            }
+            // move
+            const vx = DIR_V[e.dir][0]
+            const vy = DIR_V[e.dir][1]
+            if (!collideMap(e.x + (vx * e.speed * dt) / 16, e.y + (vy * e.speed * dt) / 16, e.w, e.h)) {
+              e.x += (vx * e.speed * dt) / 16
+              e.y += (vy * e.speed * dt) / 16
+            } else {
+              e.dir = Math.floor(Math.random() * 4)
+            }
+          }
+        }
+
+        // collisions: bullet <-> tank
+        function updateBullets(dt) {
+          for (const b of bullets) {
+            if (!b.alive) continue
+            b.update(dt)
+            // check tank hits
+            if (!b.alive) continue
+            const list = b.owner && b.owner.isEnemy ? [player] : enemies
+            for (const t of list) {
+              if (!t || !t.alive) continue
+              const tx = t.x,
+                ty = t.y
+              if (b.x > tx - 2 && b.x < tx + t.w + 2 && b.y > ty - 2 && b.y < ty + t.h + 2) {
+                // hit
+                b.alive = false
+                t.alive = false
+                score += t.isEnemy ? 100 : 0
+                updateHUD()
+                // enemy death: remove after small explosion and maybe spawn new
+                setTimeout(() => {
+                  if (t.isEnemy) {
+                    const i = enemies.indexOf(t)
+                    if (i >= 0) enemies.splice(i, 1)
+                  }
+                }, 100)
+                // player death logic
+                if (!t.isEnemy) {
+                  lives--
+                  updateHUD()
+                  if (lives > 0) setTimeout(spawnPlayer, 1000)
+                  else gameOver()
+                }
+              }
+            }
+          }
+          bullets = bullets.filter((b) => b.alive)
+        }
+
+        let last = performance.now()
+        let enemySpawnTimer = 0
+        function gameLoop(now) {
+          const dt = Math.min(60, now - last)
+          last = now
+          if (!paused) {
+            // player input
+            let moved = false
+            if (touchDir) {
+              clientMove(touchDir, dt)
+              moved = true
+            }
+            if (keys['arrowup'] || keys['w']) {
+              player.moveDir(DIRS.UP, dt)
+              moved = true
+            } else if (keys['arrowdown'] || keys['s']) {
+              player.moveDir(DIRS.DOWN, dt)
+              moved = true
+            } else if (keys['arrowleft'] || keys['a']) {
+              player.moveDir(DIRS.LEFT, dt)
+              moved = true
+            } else if (keys['arrowright'] || keys['d']) {
+              player.moveDir(DIRS.RIGHT, dt)
+              moved = true
+            }
+            // auto-fire while holding space
+            if (keys[' ']) {
+              fire()
+            }
+
+            // update entities
+            player.update(dt)
+            updateEnemies(dt)
+            updateBullets(dt)
+
+            // spawn enemies slowly
+            enemySpawnTimer += dt
+            if (enemySpawnTimer > 3000 && enemies.length < 6) {
+              spawnEnemy()
+              enemySpawnTimer = 0
+            }
+          }
+
+          // draw
+          draw()
+          requestAnimationFrame(gameLoop)
+        }
+
+        function clientMove(dir, dt) {
+          const mapDir = { up: DIRS.UP, down: DIRS.DOWN, left: DIRS.LEFT, right: DIRS.RIGHT }
+          player.moveDir(mapDir[dir], dt)
+        }
+
+        function draw() {
+          // clear
+          ctx.clearRect(0, 0, BASE_W, BASE_H)
+          // draw tiles
+          for (let y = 0; y < GRID_H; y++) {
+            for (let x = 0; x < GRID_W; x++) {
+              const t = map[idx(x, y)]
+              if (t === 0) continue
+              const px = x * TILE,
+                py = y * TILE
+              if (t === 1) {
+                // brick
+                ctx.fillStyle = '#c07040'
+                ctx.fillRect(px, py, TILE, TILE)
+                ctx.strokeStyle = '#9a5232'
+                ctx.strokeRect(px + 1, py + 1, TILE - 2, TILE - 2)
+              } else if (t === 2) {
+                ctx.fillStyle = '#6d6d78'
+                ctx.fillRect(px, py, TILE, TILE)
+              } else if (t === 3) {
+                ctx.fillStyle = '#2c6fb7'
+                ctx.fillRect(px, py, TILE, TILE)
+              } else if (t === 4) {
+                ctx.fillStyle = 'rgba(14,40,8,0.5)'
+                ctx.fillRect(px, py, TILE, TILE)
+              }
+            }
+          }
+
+          // draw player
+          player.draw(ctx)
+          // draw enemies
+          for (const e of enemies) e.draw(ctx)
+          // draw bullets
+          for (const b of bullets) b.draw(ctx)
+          // draw little grid overlay for style
+          ctx.strokeStyle = 'rgba(255,255,255,0.02)'
+          for (let x = 0; x <= GRID_W; x++) {
+            ctx.beginPath()
+            ctx.moveTo(x * TILE, 0)
+            ctx.lineTo(x * TILE, BASE_H)
+            ctx.stroke()
+          }
+          for (let y = 0; y <= GRID_H; y++) {
+            ctx.beginPath()
+            ctx.moveTo(0, y * TILE)
+            ctx.lineTo(BASE_W, y * TILE)
+            ctx.stroke()
+          }
+        }
+
+        function gameOver() {
+          paused = true
+          alert('Game Over! Score: ' + score)
+          location.reload()
+        }
+
+        // initial kick
+        requestAnimationFrame(gameLoop)
+      })()
+    </script>
+  </body>
+</html>

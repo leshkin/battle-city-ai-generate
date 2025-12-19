@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Battle City Clone</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        touch-action: manipulation;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+
+      body {
+        font-family: 'Courier New', monospace;
+        background-color: #111;
+        color: #0f0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        overflow: hidden;
+        padding: 10px;
+      }
+
+      .game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+        max-width: 100%;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 10px;
+        width: 100%;
+      }
+
+      h1 {
+        color: #ffcc00;
+        text-shadow: 2px 2px 0 #ff0000;
+        font-size: 2.5rem;
+        margin-bottom: 5px;
+        letter-spacing: 2px;
+      }
+
+      .game-info {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        max-width: 800px;
+        margin-bottom: 10px;
+        font-size: 1.2rem;
+        background-color: #222;
+        padding: 10px;
+        border-radius: 5px;
+        border: 2px solid #444;
+      }
+
+      #gameCanvas {
+        border: 4px solid #444;
+        background-color: #000;
+        max-width: 100%;
+        display: block;
+      }
+
+      .controls {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        margin-top: 10px;
+        width: 100%;
+        max-width: 800px;
+      }
+
+      .desktop-controls {
+        display: none;
+        width: 100%;
+        text-align: center;
+        margin-top: 10px;
+        color: #aaa;
+      }
+
+      .mobile-controls {
+        display: none;
+        width: 100%;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 20px;
+        touch-action: none;
+      }
+
+      .mobile-btn {
+        background-color: #333;
+        border: 2px solid #555;
+        border-radius: 10px;
+        color: #fff;
+        font-size: 1.5rem;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 70px;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      .mobile-btn:active {
+        background-color: #555;
+        transform: scale(0.95);
+      }
+
+      .fire-btn {
+        background-color: #a00;
+        border-color: #f00;
+        grid-column: 3;
+        grid-row: 2;
+      }
+
+      .up-btn {
+        grid-column: 2;
+        grid-row: 1;
+      }
+
+      .down-btn {
+        grid-column: 2;
+        grid-row: 3;
+      }
+
+      .left-btn {
+        grid-column: 1;
+        grid-row: 2;
+      }
+
+      .right-btn {
+        grid-column: 3;
+        grid-row: 2;
+      }
+
+      .instructions {
+        background-color: #222;
+        padding: 15px;
+        border-radius: 5px;
+        border: 2px solid #444;
+        margin-top: 10px;
+        max-width: 800px;
+        width: 100%;
+      }
+
+      .instructions h3 {
+        color: #ffcc00;
+        margin-bottom: 10px;
+      }
+
+      .instructions ul {
+        margin-left: 20px;
+        line-height: 1.5;
+      }
+
+      .instructions li {
+        margin-bottom: 5px;
+      }
+
+      .instructions kbd {
+        background-color: #333;
+        padding: 2px 6px;
+        border-radius: 3px;
+        border: 1px solid #555;
+        font-family: monospace;
+      }
+
+      .instructions .mobile-only {
+        display: none;
+      }
+
+      .game-over {
+        display: none;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: rgba(0, 0, 0, 0.9);
+        color: #ffcc00;
+        padding: 30px;
+        border-radius: 10px;
+        border: 4px solid #ff0000;
+        text-align: center;
+        z-index: 10;
+        width: 80%;
+        max-width: 500px;
+      }
+
+      .game-over h2 {
+        font-size: 2.5rem;
+        margin-bottom: 20px;
+        color: #ff0000;
+      }
+
+      .game-over button {
+        background-color: #ffcc00;
+        color: #000;
+        border: none;
+        padding: 12px 24px;
+        font-size: 1.2rem;
+        font-weight: bold;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-top: 20px;
+      }
+
+      .game-over button:hover {
+        background-color: #ffdd44;
+      }
+
+      @media (min-width: 768px) {
+        .desktop-controls {
+          display: block;
+        }
+      }
+
+      @media (max-width: 767px) {
+        .mobile-controls {
+          display: grid;
+        }
+
+        .instructions .desktop-only {
+          display: none;
+        }
+
+        .instructions .mobile-only {
+          display: block;
+        }
+
+        h1 {
+          font-size: 2rem;
+        }
+
+        #gameCanvas {
+          width: 100%;
+          height: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="game-container">
+      <div class="header">
+        <h1>BATTLE CITY</h1>
+      </div>
+
+      <div class="game-info">
+        <div>Level: <span id="level">1</span></div>
+        <div>Lives: <span id="lives">3</span></div>
+        <div>Score: <span id="score">0</span></div>
+        <div>Enemies: <span id="enemies">5</span></div>
+      </div>
+
+      <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+      <div class="desktop-controls">Use <kbd>WASD</kbd> or <kbd>Arrow Keys</kbd> to move, <kbd>SPACE</kbd> to fire</div>
+
+      <div class="mobile-controls">
+        <div class="mobile-btn up-btn">↑</div>
+        <div class="mobile-btn down-btn">↓</div>
+        <div class="mobile-btn left-btn">←</div>
+        <div class="mobile-btn right-btn">→</div>
+        <div class="mobile-btn fire-btn">FIRE</div>
+      </div>
+
+      <div class="instructions">
+        <h3>How to Play</h3>
+        <ul>
+          <li class="desktop-only">Use <kbd>WASD</kbd> or <kbd>Arrow Keys</kbd> to move your tank</li>
+          <li class="desktop-only">Press <kbd>SPACE</kbd> to fire bullets</li>
+          <li class="mobile-only">Use the directional buttons to move your tank</li>
+          <li class="mobile-only">Tap the FIRE button to shoot bullets</li>
+          <li>Destroy all enemy tanks to advance to the next level</li>
+          <li>Avoid enemy bullets and don't let enemies reach your base (green rectangle)</li>
+          <li>Break bricks by shooting them, steel walls cannot be destroyed</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="game-over" id="gameOverScreen">
+      <h2 id="gameOverTitle">GAME OVER</h2>
+      <p>Final Score: <span id="finalScore">0</span></p>
+      <p>Level Reached: <span id="finalLevel">1</span></p>
+      <button id="restartButton">PLAY AGAIN</button>
+    </div>
+
+    <script>
+      // Game variables
+      const canvas = document.getElementById('gameCanvas')
+      const ctx = canvas.getContext('2d')
+      const levelElement = document.getElementById('level')
+      const livesElement = document.getElementById('lives')
+      const scoreElement = document.getElementById('score')
+      const enemiesElement = document.getElementById('enemies')
+      const gameOverScreen = document.getElementById('gameOverScreen')
+      const gameOverTitle = document.getElementById('gameOverTitle')
+      const finalScoreElement = document.getElementById('finalScore')
+      const finalLevelElement = document.getElementById('finalLevel')
+      const restartButton = document.getElementById('restartButton')
+
+      // Mobile controls
+      const upBtn = document.querySelector('.up-btn')
+      const downBtn = document.querySelector('.down-btn')
+      const leftBtn = document.querySelector('.left-btn')
+      const rightBtn = document.querySelector('.right-btn')
+      const fireBtn = document.querySelector('.fire-btn')
+
+      // Game state
+      let gameRunning = true
+      let level = 1
+      let lives = 3
+      let score = 0
+      let enemyCount = 5
+      let enemies = []
+      let player = null
+      let bullets = []
+      let enemyBullets = []
+      let walls = []
+      let keys = {}
+      let playerShootCooldown = 0
+      let enemyShootCooldown = 0
+      let base = null
+
+      // Tank colors
+      const PLAYER_COLOR = '#4CAF50'
+      const ENEMY_COLOR = '#FF5252'
+      const BULLET_COLOR = '#FFCC00'
+      const BRICK_COLOR = '#D2691E'
+      const STEEL_COLOR = '#808080'
+      const BASE_COLOR = '#00FF00'
+
+      // Game constants
+      const TANK_SIZE = 40
+      const TANK_SPEED = 3
+      const ENEMY_SPEED = 1.5
+      const BULLET_SIZE = 8
+      const BULLET_SPEED = 6
+      const SHOOT_COOLDOWN = 20
+      const ENEMY_SHOOT_COOLDOWN = 60
+      const GRID_SIZE = 40
+
+      // Directions
+      const DIRECTION = {
+        UP: 0,
+        RIGHT: 1,
+        DOWN: 2,
+        LEFT: 3,
+      }
+
+      // Wall types
+      const WALL_TYPE = {
+        BRICK: 0,
+        STEEL: 1,
+      }
+
+      // Tank class
+      class Tank {
+        constructor(x, y, direction, color, isPlayer = false) {
+          this.x = x
+          this.y = y
+          this.direction = direction
+          this.color = color
+          this.isPlayer = isPlayer
+          this.width = TANK_SIZE
+          this.height = TANK_SIZE
+          this.speed = isPlayer ? TANK_SPEED : ENEMY_SPEED
+          this.active = true
+        }
+
+        draw() {
+          if (!this.active) return
+
+          ctx.save()
+          ctx.translate(this.x + this.width / 2, this.y + this.height / 2)
+
+          // Rotate based on direction
+          let angle = 0
+          switch (this.direction) {
+            case DIRECTION.RIGHT:
+              angle = Math.PI / 2
+              break
+            case DIRECTION.DOWN:
+              angle = Math.PI
+              break
+            case DIRECTION.LEFT:
+              angle = Math.PI * 1.5
+              break
+          }
+          ctx.rotate(angle)
+
+          // Draw tank body
+          ctx.fillStyle = this.color
+          ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height)
+
+          // Draw tank details
+          ctx.fillStyle = '#333'
+          ctx.fillRect(-this.width / 4, -this.height / 2, this.width / 2, this.height / 3)
+
+          // Draw tank barrel
+          ctx.fillStyle = '#333'
+          ctx.fillRect(0, -this.height / 8, this.width / 2, this.height / 4)
+
+          ctx.restore()
+        }
+
+        update() {
+          if (!this.active) return
+
+          let newX = this.x
+          let newY = this.y
+
+          // Move tank based on direction
+          switch (this.direction) {
+            case DIRECTION.UP:
+              newY -= this.speed
+              break
+            case DIRECTION.RIGHT:
+              newX += this.speed
+              break
+            case DIRECTION.DOWN:
+              newY += this.speed
+              break
+            case DIRECTION.LEFT:
+              newX -= this.speed
+              break
+          }
+
+          // Check wall collisions
+          let canMove = true
+          for (let wall of walls) {
+            if (this.collidesWith(wall, newX, newY)) {
+              canMove = false
+              break
+            }
+          }
+
+          // Check base collision
+          if (base && this.collidesWith(base, newX, newY)) {
+            canMove = false
+          }
+
+          // Check enemy collisions (for enemy tanks)
+          if (!this.isPlayer) {
+            if (player && this.collidesWith(player, newX, newY)) {
+              canMove = false
+            }
+
+            for (let enemy of enemies) {
+              if (enemy !== this && enemy.active && this.collidesWith(enemy, newX, newY)) {
+                canMove = false
+                break
+              }
+            }
+          }
+
+          // Check canvas boundaries
+          if (newX < 0 || newX + this.width > canvas.width || newY < 0 || newY + this.height > canvas.height) {
+            canMove = false
+          }
+
+          if (canMove) {
+            this.x = newX
+            this.y = newY
+          }
+
+          // Enemy AI
+          if (!this.isPlayer && this.active) {
+            // Randomly change direction occasionally
+            if (Math.random() < 0.02) {
+              this.direction = Math.floor(Math.random() * 4)
+            }
+
+            // Try to shoot at player
+            if (player && player.active) {
+              const dx = player.x - this.x
+              const dy = player.y - this.y
+              const distance = Math.sqrt(dx * dx + dy * dy)
+
+              // If player is within range and roughly aligned, shoot
+              if (distance < 300 && enemyShootCooldown <= 0) {
+                const tolerance = 20
+
+                // Check if aligned with player
+                let aligned = false
+                if (this.direction === DIRECTION.UP && Math.abs(dx) < tolerance && dy < 0) aligned = true
+                if (this.direction === DIRECTION.RIGHT && Math.abs(dy) < tolerance && dx > 0) aligned = true
+                if (this.direction === DIRECTION.DOWN && Math.abs(dx) < tolerance && dy > 0) aligned = true
+                if (this.direction === DIRECTION.LEFT && Math.abs(dy) < tolerance && dx < 0) aligned = true
+
+                if (aligned) {
+                  this.shoot()
+                  enemyShootCooldown = ENEMY_SHOOT_COOLDOWN
+                }
+              }
+            }
+          }
+        }
+
+        collidesWith(other, checkX = this.x, checkY = this.y) {
+          return !(
+            checkX + this.width <= other.x ||
+            checkX >= other.x + other.width ||
+            checkY + this.height <= other.y ||
+            checkY >= other.y + other.height
+          )
+        }
+
+        shoot() {
+          let bulletX, bulletY
+
+          // Calculate bullet starting position based on tank direction
+          switch (this.direction) {
+            case DIRECTION.UP:
+              bulletX = this.x + this.width / 2 - BULLET_SIZE / 2
+              bulletY = this.y - BULLET_SIZE
+              break
+            case DIRECTION.RIGHT:
+              bulletX = this.x + this.width
+              bulletY = this.y + this.height / 2 - BULLET_SIZE / 2
+              break
+            case DIRECTION.DOWN:
+              bulletX = this.x + this.width / 2 - BULLET_SIZE / 2
+              bulletY = this.y + this.height
+              break
+            case DIRECTION.LEFT:
+              bulletX = this.x - BULLET_SIZE
+              bulletY = this.y + this.height / 2 - BULLET_SIZE / 2
+              break
+          }
+
+          const bulletList = this.isPlayer ? bullets : enemyBullets
+          bulletList.push({
+            x: bulletX,
+            y: bulletY,
+            direction: this.direction,
+            isPlayer: this.isPlayer,
+            width: BULLET_SIZE,
+            height: BULLET_SIZE,
+          })
+        }
+
+        takeHit() {
+          this.active = false
+          return true // Tank was destroyed
+        }
+      }
+
+      // Wall class
+      class Wall {
+        constructor(x, y, type) {
+          this.x = x
+          this.y = y
+          this.width = GRID_SIZE
+          this.height = GRID_SIZE
+          this.type = type
+          this.active = true
+        }
+
+        draw() {
+          if (!this.active) return
+
+          ctx.fillStyle = this.type === WALL_TYPE.BRICK ? BRICK_COLOR : STEEL_COLOR
+          ctx.fillRect(this.x, this.y, this.width, this.height)
+
+          // Add texture to walls
+          ctx.fillStyle = this.type === WALL_TYPE.BRICK ? '#A0522D' : '#606060'
+
+          if (this.type === WALL_TYPE.BRICK) {
+            // Brick pattern
+            ctx.fillRect(this.x + 2, this.y + 2, this.width - 4, 4)
+            ctx.fillRect(this.x + 2, this.y + this.height - 6, this.width - 4, 4)
+            ctx.fillRect(this.x + 2, this.y + 2, 4, this.height - 4)
+            ctx.fillRect(this.x + this.width - 6, this.y + 2, 4, this.height - 4)
+          } else {
+            // Steel pattern (dots)
+            for (let i = 0; i < 4; i++) {
+              for (let j = 0; j < 4; j++) {
+                if ((i + j) % 2 === 0) {
+                  ctx.fillRect(
+                    this.x + (i * this.width) / 4 + 2,
+                    this.y + (j * this.height) / 4 + 2,
+                    this.width / 4 - 4,
+                    this.height / 4 - 4
+                  )
+                }
+              }
+            }
+          }
+        }
+
+        takeHit(isPlayerBullet) {
+          // Steel walls can't be destroyed by player bullets
+          if (this.type === WALL_TYPE.STEEL && isPlayerBullet) {
+            return false
+          }
+
+          this.active = false
+          return true
+        }
+      }
+
+      // Base class
+      class Base {
+        constructor(x, y) {
+          this.x = x
+          this.y = y
+          this.width = GRID_SIZE
+          this.height = GRID_SIZE
+          this.active = true
+        }
+
+        draw() {
+          if (!this.active) return
+
+          ctx.fillStyle = BASE_COLOR
+          ctx.fillRect(this.x, this.y, this.width, this.height)
+
+          // Draw base symbol
+          ctx.fillStyle = '#000'
+          ctx.beginPath()
+          ctx.moveTo(this.x + this.width / 2, this.y + 5)
+          ctx.lineTo(this.x + this.width - 5, this.y + this.height / 2)
+          ctx.lineTo(this.x + this.width / 2, this.y + this.height - 5)
+          ctx.lineTo(this.x + 5, this.y + this.height / 2)
+          ctx.closePath()
+          ctx.fill()
+        }
+
+        takeHit() {
+          this.active = false
+          return true
+        }
+      }
+
+      // Initialize game
+      function initGame() {
+        // Reset game state
+        gameRunning = true
+        player = null
+        enemies = []
+        bullets = []
+        enemyBullets = []
+        walls = []
+        base = null
+
+        // Create player tank
+        player = new Tank(
+          canvas.width / 2 - TANK_SIZE / 2,
+          canvas.height - TANK_SIZE * 2,
+          DIRECTION.UP,
+          PLAYER_COLOR,
+          true
+        )
+
+        // Create enemies
+        enemies = []
+        for (let i = 0; i < enemyCount; i++) {
+          let x, y
+          let validPosition = false
+
+          // Find valid position for enemy (not too close to player)
+          while (!validPosition) {
+            x = Math.floor(Math.random() * (canvas.width - TANK_SIZE))
+            y = Math.floor(Math.random() * (canvas.height / 3))
+
+            // Check distance from player
+            const dx = x - player.x
+            const dy = y - player.y
+            const distance = Math.sqrt(dx * dx + dy * dy)
+
+            if (distance > 200) {
+              validPosition = true
+            }
+          }
+
+          enemies.push(new Tank(x, y, DIRECTION.DOWN, ENEMY_COLOR, false))
+        }
+
+        // Create walls
+        walls = []
+        createLevelWalls()
+
+        // Create base
+        base = new Base(canvas.width / 2 - GRID_SIZE / 2, canvas.height - GRID_SIZE - 10)
+
+        // Update UI
+        updateUI()
+
+        // Hide game over screen
+        gameOverScreen.style.display = 'none'
+      }
+
+      // Create walls for the current level
+      function createLevelWalls() {
+        // Clear existing walls
+        walls = []
+
+        // Border walls
+        for (let i = 0; i < canvas.width; i += GRID_SIZE) {
+          // Top border
+          walls.push(new Wall(i, 0, WALL_TYPE.STEEL))
+          // Bottom border (except for player area)
+          if (i < canvas.width / 2 - GRID_SIZE * 2 || i > canvas.width / 2 + GRID_SIZE) {
+            walls.push(new Wall(i, canvas.height - GRID_SIZE, WALL_TYPE.STEEL))
+          }
+        }
+
+        for (let i = GRID_SIZE; i < canvas.height - GRID_SIZE; i += GRID_SIZE) {
+          // Left border
+          walls.push(new Wall(0, i, WALL_TYPE.STEEL))
+          // Right border
+          walls.push(new Wall(canvas.width - GRID_SIZE, i, WALL_TYPE.STEEL))
+        }
+
+        // Random brick walls
+        for (let i = 0; i < 20 + level * 5; i++) {
+          let x, y
+          let validPosition = false
+
+          while (!validPosition) {
+            x = Math.floor(Math.random() * (canvas.width / GRID_SIZE - 2)) * GRID_SIZE + GRID_SIZE
+            y = Math.floor(Math.random() * (canvas.height / GRID_SIZE - 4)) * GRID_SIZE + GRID_SIZE
+
+            // Don't place walls too close to player starting position
+            if (
+              x > canvas.width / 2 - GRID_SIZE * 3 &&
+              x < canvas.width / 2 + GRID_SIZE * 3 &&
+              y > canvas.height - GRID_SIZE * 5
+            ) {
+              continue
+            }
+
+            // Don't place walls on top of other walls
+            let collision = false
+            for (let wall of walls) {
+              if (wall.x === x && wall.y === y) {
+                collision = true
+                break
+              }
+            }
+
+            if (!collision) validPosition = true
+          }
+
+          walls.push(new Wall(x, y, WALL_TYPE.BRICK))
+        }
+
+        // Some steel walls
+        for (let i = 0; i < 5 + level; i++) {
+          let x, y
+          let validPosition = false
+
+          while (!validPosition) {
+            x = Math.floor(Math.random() * (canvas.width / GRID_SIZE - 2)) * GRID_SIZE + GRID_SIZE
+            y = Math.floor(Math.random() * (canvas.height / GRID_SIZE - 4)) * GRID_SIZE + GRID_SIZE
+
+            // Don't place walls too close to player starting position
+            if (
+              x > canvas.width / 2 - GRID_SIZE * 3 &&
+              x < canvas.width / 2 + GRID_SIZE * 3 &&
+              y > canvas.height - GRID_SIZE * 5
+            ) {
+              continue
+            }
+
+            // Don't place walls on top of other walls
+            let collision = false
+            for (let wall of walls) {
+              if (wall.x === x && wall.y === y) {
+                collision = true
+                break
+              }
+            }
+
+            if (!collision) validPosition = true
+          }
+
+          walls.push(new Wall(x, y, WALL_TYPE.STEEL))
+        }
+      }
+
+      // Update game UI
+      function updateUI() {
+        levelElement.textContent = level
+        livesElement.textContent = lives
+        scoreElement.textContent = score
+        enemiesElement.textContent = enemies.filter((e) => e.active).length
+      }
+
+      // Handle keyboard input
+      function handleKeyDown(e) {
+        keys[e.key.toLowerCase()] = true
+
+        // Prevent arrow keys from scrolling the page
+        if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key.toLowerCase())) {
+          e.preventDefault()
+        }
+
+        // Handle shooting
+        if (e.key === ' ' && playerShootCooldown <= 0 && gameRunning) {
+          player.shoot()
+          playerShootCooldown = SHOOT_COOLDOWN
+        }
+      }
+
+      function handleKeyUp(e) {
+        keys[e.key.toLowerCase()] = false
+      }
+
+      // Mobile control handlers
+      function setupMobileControls() {
+        // Direction buttons
+        upBtn.addEventListener('touchstart', () => (keys['arrowup'] = true))
+        upBtn.addEventListener('touchend', () => (keys['arrowup'] = false))
+
+        downBtn.addEventListener('touchstart', () => (keys['arrowdown'] = true))
+        downBtn.addEventListener('touchend', () => (keys['arrowdown'] = false))
+
+        leftBtn.addEventListener('touchstart', () => (keys['arrowleft'] = true))
+        leftBtn.addEventListener('touchend', () => (keys['arrowleft'] = false))
+
+        rightBtn.addEventListener('touchstart', () => (keys['arrowright'] = true))
+        rightBtn.addEventListener('touchend', () => (keys['arrowright'] = false))
+
+        // Fire button
+        fireBtn.addEventListener('touchstart', (e) => {
+          e.preventDefault()
+          if (playerShootCooldown <= 0 && gameRunning) {
+            player.shoot()
+            playerShootCooldown = SHOOT_COOLDOWN
+          }
+        })
+
+        // Prevent context menu on long press
+        document.addEventListener('contextmenu', (e) => {
+          if (e.target.classList.contains('mobile-btn')) {
+            e.preventDefault()
+          }
+        })
+      }
+
+      // Update player based on input
+      function updatePlayer() {
+        if (!player || !player.active) return
+
+        // Determine direction from keys
+        if (keys['arrowup'] || keys['w']) player.direction = DIRECTION.UP
+        else if (keys['arrowright'] || keys['d']) player.direction = DIRECTION.RIGHT
+        else if (keys['arrowdown'] || keys['s']) player.direction = DIRECTION.DOWN
+        else if (keys['arrowleft'] || keys['a']) player.direction = DIRECTION.LEFT
+
+        // Update player position
+        player.update()
+      }
+
+      // Update bullets
+      function updateBullets() {
+        // Update player bullets
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const bullet = bullets[i]
+
+          // Move bullet
+          switch (bullet.direction) {
+            case DIRECTION.UP:
+              bullet.y -= BULLET_SPEED
+              break
+            case DIRECTION.RIGHT:
+              bullet.x += BULLET_SPEED
+              break
+            case DIRECTION.DOWN:
+              bullet.y += BULLET_SPEED
+              break
+            case DIRECTION.LEFT:
+              bullet.x -= BULLET_SPEED
+              break
+          }
+
+          // Check if bullet is out of bounds
+          if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+            bullets.splice(i, 1)
+            continue
+          }
+
+          // Check collision with walls
+          let hitWall = false
+          for (let wall of walls) {
+            if (wall.active && checkCollision(bullet, wall)) {
+              if (wall.takeHit(bullet.isPlayer)) {
+                bullets.splice(i, 1)
+                hitWall = true
+                break
+              }
+            }
+          }
+
+          if (hitWall) continue
+
+          // Check collision with base
+          if (base && base.active && checkCollision(bullet, base)) {
+            base.takeHit()
+            bullets.splice(i, 1)
+            gameOver(false)
+            continue
+          }
+
+          // Check collision with enemies (player bullets only)
+          if (bullet.isPlayer) {
+            for (let enemy of enemies) {
+              if (enemy.active && checkCollision(bullet, enemy)) {
+                enemy.takeHit()
+                bullets.splice(i, 1)
+                score += 100
+
+                // Check if all enemies are destroyed
+                const activeEnemies = enemies.filter((e) => e.active)
+                if (activeEnemies.length === 0) {
+                  nextLevel()
+                }
+
+                break
+              }
+            }
+          }
+        }
+
+        // Update enemy bullets
+        for (let i = enemyBullets.length - 1; i >= 0; i--) {
+          const bullet = enemyBullets[i]
+
+          // Move bullet
+          switch (bullet.direction) {
+            case DIRECTION.UP:
+              bullet.y -= BULLET_SPEED
+              break
+            case DIRECTION.RIGHT:
+              bullet.x += BULLET_SPEED
+              break
+            case DIRECTION.DOWN:
+              bullet.y += BULLET_SPEED
+              break
+            case DIRECTION.LEFT:
+              bullet.x -= BULLET_SPEED
+              break
+          }
+
+          // Check if bullet is out of bounds
+          if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+            enemyBullets.splice(i, 1)
+            continue
+          }
+
+          // Check collision with walls
+          let hitWall = false
+          for (let wall of walls) {
+            if (wall.active && checkCollision(bullet, wall)) {
+              if (wall.takeHit(bullet.isPlayer)) {
+                enemyBullets.splice(i, 1)
+                hitWall = true
+                break
+              }
+            }
+          }
+
+          if (hitWall) continue
+
+          // Check collision with base
+          if (base && base.active && checkCollision(bullet, base)) {
+            base.takeHit()
+            enemyBullets.splice(i, 1)
+            gameOver(false)
+            continue
+          }
+
+          // Check collision with player
+          if (player && player.active && checkCollision(bullet, player)) {
+            player.takeHit()
+            enemyBullets.splice(i, 1)
+            lives--
+
+            if (lives <= 0) {
+              gameOver(false)
+            } else {
+              // Respawn player
+              player.x = canvas.width / 2 - TANK_SIZE / 2
+              player.y = canvas.height - TANK_SIZE * 2
+              player.direction = DIRECTION.UP
+              player.active = true
+            }
+
+            updateUI()
+          }
+        }
+      }
+
+      // Check collision between two objects
+      function checkCollision(obj1, obj2) {
+        return !(
+          obj1.x + obj1.width <= obj2.x ||
+          obj1.x >= obj2.x + obj2.width ||
+          obj1.y + obj1.height <= obj2.y ||
+          obj1.y >= obj2.y + obj2.height
+        )
+      }
+
+      // Advance to next level
+      function nextLevel() {
+        level++
+        enemyCount = 5 + Math.floor(level / 2)
+        score += 500 // Bonus for completing level
+
+        // Reset game with new level
+        initGame()
+      }
+
+      // Game over
+      function gameOver(win) {
+        gameRunning = false
+
+        if (win) {
+          gameOverTitle.textContent = 'VICTORY!'
+          gameOverTitle.style.color = '#FFCC00'
+        } else {
+          gameOverTitle.textContent = 'GAME OVER'
+          gameOverTitle.style.color = '#FF0000'
+        }
+
+        finalScoreElement.textContent = score
+        finalLevelElement.textContent = level
+        gameOverScreen.style.display = 'block'
+      }
+
+      // Draw everything
+      function draw() {
+        // Clear canvas
+        ctx.fillStyle = '#000'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+        // Draw base
+        if (base) base.draw()
+
+        // Draw walls
+        for (let wall of walls) {
+          wall.draw()
+        }
+
+        // Draw player
+        if (player) player.draw()
+
+        // Draw enemies
+        for (let enemy of enemies) {
+          enemy.draw()
+        }
+
+        // Draw bullets
+        ctx.fillStyle = BULLET_COLOR
+        for (let bullet of bullets) {
+          ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height)
+        }
+
+        for (let bullet of enemyBullets) {
+          ctx.fillStyle = '#FF4444'
+          ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height)
+        }
+
+        // Draw game over screen if active
+        if (!gameRunning && gameOverScreen.style.display === 'block') {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+        }
+      }
+
+      // Game loop
+      function gameLoop() {
+        if (!gameRunning) {
+          draw()
+          requestAnimationFrame(gameLoop)
+          return
+        }
+
+        // Update player
+        updatePlayer()
+
+        // Update enemies
+        for (let enemy of enemies) {
+          enemy.update()
+        }
+
+        // Update bullets
+        updateBullets()
+
+        // Update cooldowns
+        if (playerShootCooldown > 0) playerShootCooldown--
+        if (enemyShootCooldown > 0) enemyShootCooldown--
+
+        // Draw everything
+        draw()
+
+        // Continue game loop
+        requestAnimationFrame(gameLoop)
+      }
+
+      // Start game
+      function startGame() {
+        // Reset game stats
+        level = 1
+        lives = 3
+        score = 0
+        enemyCount = 5
+
+        // Initialize game
+        initGame()
+
+        // Start game loop
+        gameLoop()
+      }
+
+      // Event listeners
+      window.addEventListener('keydown', handleKeyDown)
+      window.addEventListener('keyup', handleKeyUp)
+      restartButton.addEventListener('click', startGame)
+
+      // Setup mobile controls
+      setupMobileControls()
+
+      // Adjust canvas size for mobile
+      function resizeCanvas() {
+        const container = canvas.parentElement
+        const containerWidth = container.clientWidth
+
+        // Keep aspect ratio 4:3
+        const aspectRatio = 4 / 3
+        let newWidth = Math.min(containerWidth, 800)
+        let newHeight = newWidth / aspectRatio
+
+        // Adjust for very tall screens
+        if (newHeight > window.innerHeight * 0.6) {
+          newHeight = window.innerHeight * 0.6
+          newWidth = newHeight * aspectRatio
+        }
+
+        canvas.style.width = newWidth + 'px'
+        canvas.style.height = newHeight + 'px'
+      }
+
+      window.addEventListener('resize', resizeCanvas)
+      window.addEventListener('load', () => {
+        resizeCanvas()
+        startGame()
+      })
+    </script>
+  </body>
+</html>

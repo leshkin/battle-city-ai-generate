@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Battle City Clone</title>
+    <style>
+        :root {
+            --bg-color: #333;
+            --game-bg: #000;
+            --accent: #ffd700;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            touch-action: none; /* Prevent scroll on mobile */
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        canvas {
+            background-color: var(--game-bg);
+            display: block;
+            image-rendering: pixelated; /* Retro look */
+        }
+
+        /* HUD */
+        #ui-layer {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            pointer-events: none;
+            text-shadow: 1px 1px 0 #000;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            padding: 20px;
+            border: 2px solid white;
+            text-align: center;
+            display: none;
+        }
+
+        button.restart-btn {
+            background: var(--accent);
+            border: none;
+            padding: 10px 20px;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        /* Mobile Controls */
+        #controls {
+            display: none; /* Hidden on desktop by default, logic handles this */
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            height: 150px;
+            pointer-events: none; /* Let clicks pass through empty areas */
+            justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+
+        .dpad {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            pointer-events: auto;
+        }
+
+        .dpad-btn {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            width: 40px;
+            height: 40px;
+        }
+        .dpad-btn:active { background: rgba(255, 255, 255, 0.5); }
+        .up { top: 0; left: 40px; }
+        .down { bottom: 0; left: 40px; }
+        .left { top: 40px; left: 0; }
+        .right { top: 40px; right: 0; }
+
+        .action-btn {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 0, 0, 0.3);
+            border: 2px solid rgba(255, 0, 0, 0.5);
+            border-radius: 50%;
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            align-self: flex-end;
+            margin-bottom: 20px;
+        }
+        .action-btn:active { background: rgba(255, 0, 0, 0.6); }
+
+        @media (hover: none) and (pointer: coarse) {
+            #controls { display: flex; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="520" height="520"></canvas>
+        <div id="ui-layer">
+            <div>Enemies: <span id="enemy-count">0</span></div>
+            <div>Score: <span id="score">0</span></div>
+        </div>
+        <div id="game-over">
+            <h1 id="go-title">GAME OVER</h1>
+            <p id="go-msg"></p>
+            <button class="restart-btn" onclick="game.init()">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <div id="controls">
+        <div class="dpad">
+            <div class="dpad-btn up" data-key="ArrowUp"></div>
+            <div class="dpad-btn down" data-key="ArrowDown"></div>
+            <div class="dpad-btn left" data-key="ArrowLeft"></div>
+            <div class="dpad-btn right" data-key="ArrowRight"></div>
+        </div>
+        <div class="action-btn" data-key="Space">FIRE</div>
+    </div>
+
+<script>
+/**
+ * BATTLE CITY CLONE
+ * Core Logic: Grid based collision, Canvas rendering, Object Pooling for bullets
+ */
+
+// --- Constants & Config ---
+const TILE_SIZE = 40; // Size of grid cells
+const GRID_W = 13;
+const GRID_H = 13;
+const CANVAS_W = TILE_SIZE * GRID_W;
+const CANVAS_H = TILE_SIZE * GRID_H;
+const FPS = 60;
+
+const KEYS = {
+    ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, " ": false
+};
+
+const DIRS = {
+    UP: { x: 0, y: -1 },
+    DOWN: { x: 0, y: 1 },
+    LEFT: { x: -1, y: 0 },
+    RIGHT: { x: 1, y: 0 }
+};
+
+const TYPES = {
+    EMPTY: 0,
+    BRICK: 1,
+    STEEL: 2,
+    BASE: 3, // The Eagle
+    WATER: 4,
+    GRASS: 5
+};
+
+// --- Game Engine Classes ---
+
+class Rect {
+    constructor(x, y, w, h) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+    }
+    intersects(other) {
+        return this.x < other.x + other.w &&
+               this.x + this.w > other.x &&
+               this.y < other.y + other.h &&
+               this.y + this.h > other.y;
+    }
+}
+
+class Bullet extends Rect {
+    constructor(x, y, dir, owner) {
+        super(x, y, 6, 6); // Small bullet
+        this.dir = dir;
+        this.speed = 5;
+        this.active = true;
+        this.owner = owner; // 'player' or 'enemy'
+        
+        // Center bullet based on tank muzzle
+        if(dir === DIRS.UP || dir === DIRS.DOWN) this.x += (TILE_SIZE/2) - 3;
+        if(dir === DIRS.LEFT || dir === DIRS.RIGHT) this.y += (TILE_SIZE/2) - 3;
+    }
+
+    update() {
+        this.x += this.dir.x * this.speed;
+        this.y += this.dir.y * this.speed;
+
+        // Boundary check
+        if (this.x < 0 || this.x > CANVAS_W || this.y < 0 || this.y > CANVAS_H) {
+            this.active = false;
+        }
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+    }
+}
+
+class Tank extends Rect {
+    constructor(x, y, color, isPlayer) {
+        super(x, y, TILE_SIZE - 4, TILE_SIZE - 4); // Slightly smaller than tile for wiggle room
+        this.color = color;
+        this.dir = DIRS.UP;
+        this.speed = isPlayer ? 2 : 1.5;
+        this.isPlayer = isPlayer;
+        this.cooldown = 0;
+        this.active = true;
+        this.isMoving = false;
+        // Snap to grid initially
+        this.x += 2; this.y += 2; 
+    }
+
+    shoot() {
+        if (this.cooldown <= 0) {
+            game.bullets.push(new Bullet(
+                this.x + (this.dir === DIRS.LEFT ? -4 : (this.dir === DIRS.RIGHT ? this.w : 0)),
+                this.y + (this.dir === DIRS.UP ? -4 : (this.dir === DIRS.DOWN ? this.h : 0)),
+                this.dir,
+                this.isPlayer ? 'player' : 'enemy'
+            ));
+            this.cooldown = 30; // Frames between shots
+        }
+    }
+
+    move(dir) {
+        this.dir = dir;
+        this.isMoving = true;
+
+        let nextX = this.x + (dir.x * this.speed);
+        let nextY = this.y + (dir.y * this.speed);
+
+        // Map Collision
+        if (!game.map.checkCollision({x: nextX, y: nextY, w: this.w, h: this.h})) {
+            // Tank Collision
+            let hitTank = false;
+            // Check against player if I am enemy
+            if (!this.isPlayer && game.player.active && new Rect(nextX, nextY, this.w, this.h).intersects(game.player)) hitTank = true;
+            // Check against enemies if I am player
+            if (this.isPlayer) {
+                for (let e of game.enemies) {
+                    if (e.active && new Rect(nextX, nextY, this.w, this.h).intersects(e)) hitTank = true;
+                }
+            }
+            // Enemy vs Enemy collision prevention
+            if (!this.isPlayer) {
+                for(let e of game.enemies) {
+                     if(e !== this && e.active && new Rect(nextX, nextY, this.w, this.h).intersects(e)) hitTank = true;
+                }
+            }
+
+            if (!hitTank) {
+                this.x = nextX;
+                this.y = nextY;
+            }
+        }
+    }
+
+    update() {
+        if (this.cooldown > 0) this.cooldown--;
+        this.isMoving = false;
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = this.color;
+        
+        // Tank Body
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        
+        // Tracks (Decoration)
+        ctx.fillStyle = "#000";
+        if (this.dir === DIRS.UP || this.dir === DIRS.DOWN) {
+            ctx.fillRect(this.x + 4, this.y, this.w - 8, this.h); 
+        } else {
+            ctx.fillRect(this.x, this.y + 4, this.w, this.h - 8);
+        }
+
+        // Turret
+        ctx.fillStyle = this.color; 
+        let gunLen = 10;
+        let cx = this.x + this.w/2;
+        let cy = this.y + this.h/2;
+        
+        ctx.fillRect(cx - 4, cy - 4, 8, 8); // Center box
+
+        // Barrel
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = "#ccc";
+        ctx.lineTo(cx + this.dir.x * (this.w/2 + 4), cy + this.dir.y * (this.h/2 + 4));
+        ctx.stroke();
+    }
+}
+
+class Enemy extends Tank {
+    constructor(x, y) {
+        super(x, y, '#f55', false);
+        this.changeDirTimer = 0;
+    }
+
+    update() {
+        super.update();
+        
+        // Simple AI
+        if (this.changeDirTimer <= 0) {
+            const dirs = [DIRS.UP, DIRS.DOWN, DIRS.LEFT, DIRS.RIGHT];
+            // 60% chance to move towards base (bottom center)
+            if (Math.random() < 0.6) {
+                if (this.y < (GRID_H-2) * TILE_SIZE) this.dir = DIRS.DOWN;
+                else if (this.x < (GRID_W/2) * TILE_SIZE) this.dir = DIRS.RIGHT;
+                else this.dir = DIRS.LEFT;
+            } else {
+                this.dir = dirs[Math.floor(Math.random() * dirs.length)];
+            }
+            this.changeDirTimer = Math.floor(Math.random() * 60) + 30;
+        }
+
+        this.move(this.dir);
+        this.changeDirTimer--;
+
+        // Random shooting
+        if (Math.random() < 0.02) this.shoot();
+    }
+}
+
+class GameMap {
+    constructor() {
+        // 0: Empty, 1: Brick, 2: Steel, 3: Base
+        // Simple symmetric map design
+        this.grid = [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,1,0,1,1,1,1,1,1,1,0,1,0],
+            [0,1,0,1,0,0,0,0,0,1,0,1,0],
+            [0,1,0,1,0,2,0,2,0,1,0,1,0],
+            [0,1,0,0,0,0,0,0,0,0,0,1,0],
+            [0,1,0,1,1,2,0,2,1,1,0,1,0],
+            [0,0,0,1,0,0,0,0,0,1,0,0,0],
+            [0,1,1,1,0,1,1,1,0,1,1,1,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,1,1,0,2,2,0,2,2,0,1,1,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,1,0,1,1,3,3,3,1,1,0,1,0], // Base area
+            [0,0,0,1,3,3,3,3,3,1,0,0,0], // Base area
+        ];
+        
+        // Define Base position (The Eagle)
+        this.basePos = { c: 6, r: 12 };
+        this.grid[12][6] = 3;
+        // Wall around base
+        this.grid[12][5] = 1; this.grid[12][7] = 1; 
+        this.grid[11][5] = 1; this.grid[11][6] = 1; this.grid[11][7] = 1;
+    }
+
+    checkCollision(rect) {
+        // Get grid coordinates of all 4 corners
+        let corners = [
+            {c: Math.floor(rect.x / TILE_SIZE), r: Math.floor(rect.y / TILE_SIZE)},
+            {c: Math.floor((rect.x + rect.w) / TILE_SIZE), r: Math.floor(rect.y / TILE_SIZE)},
+            {c: Math.floor(rect.x / TILE_SIZE), r: Math.floor((rect.y + rect.h) / TILE_SIZE)},
+            {c: Math.floor((rect.x + rect.w) / TILE_SIZE), r: Math.floor((rect.y + rect.h) / TILE_SIZE)}
+        ];
+
+        for (let p of corners) {
+            if (p.c < 0 || p.c >= GRID_W || p.r < 0 || p.r >= GRID_H) return true; // Out of bounds
+            let tile = this.grid[p.r][p.c];
+            if (tile === TYPES.BRICK || tile === TYPES.STEEL || tile === TYPES.BASE) return true;
+        }
+        return false;
+    }
+
+    damageTile(x, y) {
+        let c = Math.floor(x / TILE_SIZE);
+        let r = Math.floor(y / TILE_SIZE);
+        
+        if (c >= 0 && c < GRID_W && r >= 0 && r < GRID_H) {
+            if (this.grid[r][c] === TYPES.BRICK) {
+                this.grid[r][c] = TYPES.EMPTY;
+                return true;
+            } else if (this.grid[r][c] === TYPES.BASE) {
+                game.gameOver(false);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    draw(ctx) {
+        for (let r = 0; r < GRID_H; r++) {
+            for (let c = 0; c < GRID_W; c++) {
+                let x = c * TILE_SIZE;
+                let y = r * TILE_SIZE;
+                let tile = this.grid[r][c];
+
+                if (tile === TYPES.BRICK) {
+                    ctx.fillStyle = "#a52a2a"; // Brown
+                    ctx.fillRect(x+1, y+1, TILE_SIZE-2, TILE_SIZE-2);
+                    // Brick pattern
+                    ctx.fillStyle = "#800000";
+                    ctx.fillRect(x+2, y+10, TILE_SIZE-4, 2);
+                    ctx.fillRect(x+2, y+28, TILE_SIZE-4, 2);
+                } 
+                else if (tile === TYPES.STEEL) {
+                    ctx.fillStyle = "#aaa"; // Grey
+                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                    ctx.fillStyle = "#fff";
+                    ctx.fillRect(x+10, y+10, 20, 20);
+                } 
+                else if (tile === TYPES.BASE) {
+                    // Draw Eagle
+                    ctx.fillStyle = game.isGameOver ? "#555" : "#daa520"; // Gold or Dead grey
+                    ctx.beginPath();
+                    ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, TILE_SIZE/2 - 2, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.fillStyle = "#000";
+                    ctx.font = "20px Arial";
+                    ctx.fillText("🦅", x + 8, y + 28);
+                }
+            }
+        }
+    }
+}
+
+// --- Main Game Class ---
+
+class Game {
+    constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.resize();
+        
+        window.addEventListener('resize', () => this.resize());
+        this.setupInputs();
+    }
+
+    resize() {
+        // Scale canvas to fit window
+        let aspect = CANVAS_W / CANVAS_H;
+        let winW = window.innerWidth;
+        let winH = window.innerHeight;
+        let scale;
+
+        if (winW / winH < aspect) {
+            scale = winW / CANVAS_W;
+        } else {
+            scale = winH / CANVAS_H;
+        }
+        
+        // Cap max size for desktop logic, but ensure full view on mobile
+        if(scale > 1.5 && window.innerWidth > 800) scale = 1.5;
+
+        this.canvas.style.width = `${CANVAS_W * scale}px`;
+        this.canvas.style.height = `${CANVAS_H * scale}px`;
+    }
+
+    init() {
+        this.map = new GameMap();
+        this.player = new Tank(4 * TILE_SIZE, 12 * TILE_SIZE, '#4caf50', true); // Green
+        this.enemies = [];
+        this.bullets = [];
+        this.score = 0;
+        this.enemySpawnTimer = 0;
+        this.enemiesToSpawn = 10;
+        this.isGameOver = false;
+        
+        document.getElementById('game-over').style.display = 'none';
+        this.updateUI();
+        
+        if (this.loopId) cancelAnimationFrame(this.loopId);
+        this.loop();
+    }
+
+    update() {
+        if (this.isGameOver) return;
+
+        // Player Logic
+        if (this.player.active) {
+            this.player.update();
+            let moved = false;
+            if (KEYS.ArrowUp) { this.player.move(DIRS.UP); moved = true; }
+            else if (KEYS.ArrowDown) { this.player.move(DIRS.DOWN); moved = true; }
+            else if (KEYS.ArrowLeft) { this.player.move(DIRS.LEFT); moved = true; }
+            else if (KEYS.ArrowRight) { this.player.move(DIRS.RIGHT); moved = true; }
+            
+            if (KEYS[" "]) this.player.shoot();
+        }
+
+        // Enemy Logic
+        // Spawn Enemies (3 spawn points at top)
+        if (this.enemiesToSpawn > 0 && this.enemies.filter(e => e.active).length < 4) {
+            if (this.enemySpawnTimer <= 0) {
+                let spawnX = [0, 6, 12][Math.floor(Math.random()*3)] * TILE_SIZE;
+                // Check if spawn point is clear
+                let clear = true;
+                if(new Rect(spawnX, 0, TILE_SIZE, TILE_SIZE).intersects(this.player)) clear = false;
+                
+                if(clear) {
+                    this.enemies.push(new Enemy(spawnX, 0));
+                    this.enemiesToSpawn--;
+                    this.enemySpawnTimer = 180; // Wait 3 sec
+                }
+            } else {
+                this.enemySpawnTimer--;
+            }
+        } else if (this.enemiesToSpawn === 0 && this.enemies.filter(e => e.active).length === 0) {
+            this.gameOver(true); // Victory
+        }
+
+        this.enemies.forEach(e => {
+            if (e.active) e.update();
+        });
+
+        // Bullet Logic & Collision
+        this.bullets.forEach(b => {
+            if (!b.active) return;
+            b.update();
+            
+            // Bullet vs Map
+            if (this.map.checkCollision(b)) {
+                b.active = false;
+                // Try to destroy brick based on bullet center
+                let centerX = b.x + b.w/2;
+                let centerY = b.y + b.h/2;
+                // Add velocity to hit "inside" the block
+                this.map.damageTile(centerX + b.dir.x * 4, centerY + b.dir.y * 4);
+            }
+
+            // Bullet vs Tanks
+            if (b.owner === 'player') {
+                this.enemies.forEach(e => {
+                    if (e.active && b.intersects(e)) {
+                        e.active = false;
+                        b.active = false;
+                        this.score += 100;
+                        this.updateUI();
+                    }
+                });
+            } else {
+                if (this.player.active && b.intersects(this.player)) {
+                    this.player.active = false;
+                    b.active = false;
+                    this.gameOver(false);
+                }
+            }
+
+            // Bullet vs Bullet (cancellation)
+            /* Optional: Simple check could go here */
+        });
+
+        // Cleanup
+        this.bullets = this.bullets.filter(b => b.active);
+    }
+
+    draw() {
+        // Clear background
+        this.ctx.fillStyle = "#000";
+        this.ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+        this.map.draw(this.ctx);
+
+        if (this.player.active) this.player.draw(this.ctx);
+        
+        this.enemies.forEach(e => {
+            if(e.active) e.draw(this.ctx);
+        });
+
+        this.bullets.forEach(b => b.draw(this.ctx));
+    }
+
+    loop() {
+        this.update();
+        this.draw();
+        this.loopId = requestAnimationFrame(() => this.loop());
+    }
+
+    updateUI() {
+        document.getElementById('score').innerText = this.score;
+        document.getElementById('enemy-count').innerText = this.enemiesToSpawn + this.enemies.filter(e => e.active).length;
+    }
+
+    gameOver(win) {
+        this.isGameOver = true;
+        const el = document.getElementById('game-over');
+        el.style.display = 'block';
+        document.getElementById('go-title').innerText = win ? "VICTORY!" : "GAME OVER";
+        document.getElementById('go-msg').innerText = win ? "Base Defended!" : "Base Destroyed.";
+        document.getElementById('go-title').style.color = win ? "#4caf50" : "#f55";
+    }
+
+    setupInputs() {
+        // Keyboard
+        window.addEventListener('keydown', e => {
+            if (KEYS.hasOwnProperty(e.key) || e.key === "Space") {
+                KEYS[e.key === "Space" ? " " : e.key] = true;
+            }
+        });
+        window.addEventListener('keyup', e => {
+            if (KEYS.hasOwnProperty(e.key) || e.key === "Space") {
+                KEYS[e.key === "Space" ? " " : e.key] = false;
+            }
+        });
+
+        // Touch
+        const handleTouch = (e, state) => {
+            e.preventDefault(); // Stop scrolling
+            const target = e.target;
+            const key = target.dataset.key;
+            if (key) {
+                if(key === "Space") KEYS[" "] = state;
+                else KEYS[key] = state;
+            }
+        };
+
+        const controls = document.getElementById('controls');
+        controls.addEventListener('touchstart', e => handleTouch(e, true), {passive: false});
+        controls.addEventListener('touchend', e => handleTouch(e, false), {passive: false});
+        controls.addEventListener('mousedown', e => handleTouch(e, true)); // For testing with mouse on desktop
+        controls.addEventListener('mouseup', e => handleTouch(e, false));
+    }
+}
+
+// Start Game
+const game = new Game();
+game.init();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Mini Battle City</title>
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        color: white;
+        font-family: sans-serif;
+        touch-action: none;
+      }
+      canvas {
+        background: #000;
+        image-rendering: pixelated;
+      }
+      .controls {
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        right: 10px;
+        display: flex;
+        justify-content: space-between;
+        pointer-events: none;
+      }
+      .pad,
+      .fire {
+        pointer-events: auto;
+      }
+      .pad {
+        display: grid;
+        grid-template-columns: repeat(3, 50px);
+        grid-template-rows: repeat(3, 50px);
+        gap: 5px;
+      }
+      button {
+        background: #333;
+        border: none;
+        color: white;
+        font-size: 20px;
+        border-radius: 8px;
+      }
+      .fire {
+        width: 80px;
+        height: 80px;
+        font-size: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game" width="416" height="416"></canvas>
+
+    <div class="controls">
+      <div class="pad">
+        <div></div>
+        <button data-dir="up">▲</button>
+        <div></div>
+        <button data-dir="left">◀</button>
+        <div></div>
+        <button data-dir="right">▶</button>
+        <div></div>
+        <button data-dir="down">▼</button>
+        <div></div>
+      </div>
+      <button class="fire">FIRE</button>
+    </div>
+
+    <script>
+      const canvas = document.getElementById('game')
+      const ctx = canvas.getContext('2d')
+
+      const TILE = 32
+      const MAP_SIZE = 13
+
+      const map = [
+        '#############',
+        '#...........#',
+        '#.###.###.###',
+        '#...........#',
+        '#.###.#.###.#',
+        '#.....#.....#',
+        '###.#####.###',
+        '#...........#',
+        '#.###.###.###',
+        '#...........#',
+        '#.###.#.###.#',
+        '#...........#',
+        '#############',
+      ]
+
+      const walls = []
+      map.forEach((row, y) => {
+        row.split('').forEach((c, x) => {
+          if (c === '#') walls.push({ x, y })
+        })
+      })
+
+      const player = {
+        x: 1,
+        y: 1,
+        dir: 'up',
+        cooldown: 0,
+      }
+
+      const enemies = [{ x: 11, y: 11, dir: 'down', cooldown: 0 }]
+
+      const bullets = []
+
+      function drawTile(x, y, color) {
+        ctx.fillStyle = color
+        ctx.fillRect(x * TILE, y * TILE, TILE, TILE)
+      }
+
+      function blocked(x, y) {
+        return walls.some((w) => w.x === x && w.y === y)
+      }
+
+      function moveTank(tank) {
+        let nx = tank.x
+        let ny = tank.y
+        if (tank.dir === 'up') ny--
+        if (tank.dir === 'down') ny++
+        if (tank.dir === 'left') nx--
+        if (tank.dir === 'right') nx++
+        if (!blocked(nx, ny)) {
+          tank.x = nx
+          tank.y = ny
+        }
+      }
+
+      function shoot(tank) {
+        if (tank.cooldown > 0) return
+        bullets.push({
+          x: tank.x,
+          y: tank.y,
+          dir: tank.dir,
+          owner: tank,
+        })
+        tank.cooldown = 20
+      }
+
+      function update() {
+        player.cooldown--
+        enemies.forEach((e) => e.cooldown--)
+
+        bullets.forEach((b) => {
+          if (b.dir === 'up') b.y -= 0.25
+          if (b.dir === 'down') b.y += 0.25
+          if (b.dir === 'left') b.x -= 0.25
+          if (b.dir === 'right') b.x += 0.25
+        })
+
+        bullets.forEach((b, i) => {
+          if (blocked(Math.floor(b.x), Math.floor(b.y))) {
+            bullets.splice(i, 1)
+          }
+        })
+
+        enemies.forEach((e) => {
+          if (Math.random() < 0.02) {
+            e.dir = ['up', 'down', 'left', 'right'][Math.floor(Math.random() * 4)]
+          }
+          if (Math.random() < 0.01) shoot(e)
+          moveTank(e)
+        })
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        walls.forEach((w) => drawTile(w.x, w.y, '#b33'))
+
+        drawTile(player.x, player.y, '#0f0')
+
+        enemies.forEach((e) => drawTile(e.x, e.y, '#f00'))
+
+        bullets.forEach((b) => {
+          ctx.fillStyle = '#ff0'
+          ctx.fillRect(b.x * TILE + 12, b.y * TILE + 12, 8, 8)
+        })
+      }
+
+      function loop() {
+        update()
+        draw()
+        requestAnimationFrame(loop)
+      }
+      loop()
+
+      // Keyboard
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowUp' || e.key === 'w') (player.dir = 'up'), moveTank(player)
+        if (e.key === 'ArrowDown' || e.key === 's') (player.dir = 'down'), moveTank(player)
+        if (e.key === 'ArrowLeft' || e.key === 'a') (player.dir = 'left'), moveTank(player)
+        if (e.key === 'ArrowRight' || e.key === 'd') (player.dir = 'right'), moveTank(player)
+        if (e.key === ' ') shoot(player)
+      })
+
+      // Touch controls
+      document.querySelectorAll('[data-dir]').forEach((btn) => {
+        btn.addEventListener('touchstart', () => {
+          player.dir = btn.dataset.dir
+          moveTank(player)
+        })
+      })
+
+      document.querySelector('.fire').addEventListener('touchstart', () => shoot(player))
+    </script>
+  </body>
+</html>

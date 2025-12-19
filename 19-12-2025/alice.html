@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Tank Battle</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #000;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        #game {
+            position: relative;
+            width: 480px;
+            height: 480px;
+            border: 2px solid #3f3;
+            background: #222;
+            overflow: hidden;
+        }
+        .tank {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            background: #f00;
+            border: 1px solid #a00;
+        }
+        .enemy {
+            background: #0a0;
+            border-color: #050;
+        }
+        .bullet {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: #ff0;
+            border-radius: 50%;
+        }
+        .wall {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: #888;
+        }
+        .brick {
+            background: #a52;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #3f3;
+            font-size: 14px;
+        }
+        #mobile-controls {
+            display: none;
+            position: fixed;
+            bottom: 10px;
+            width: 100%;
+            justify-content: space-around;
+            padding: 10px;
+            z-index: 10;
+        }
+        .btn {
+            width: 60px;
+            height: 60px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            user-select: none;
+        }
+        @media (max-width: 500px) {
+            #game { width: 100vw; height: 100vw; max-width: 480px; max-height: 480px; }
+            #mobile-controls { display: flex; }
+        }
+    </style>
+</head>
+<body>
+    <div id="game">
+        <div id="ui">
+            Score: <span id="score">0</span><br>
+            Level: <span id="level">1</span><br>
+            Lives: <span id="lives">3</span>
+        </div>
+        <div class="tank" id="player"></div>
+    </div>
+
+    <div id="mobile-controls">
+        <div class="btn" id="up">⬆️</div>
+        <div class="btn" id="left">⬅️</div>
+        <div class="btn" id="right">➡️</div>
+        <div class="btn" id="down">⬇️</div>
+        <div class="btn" id="fire">🔥</div>
+    </div>
+
+    <script>
+        // Game constants
+        const GRID_SIZE = 16;
+        const MAP_WIDTH = 30; // 30x16 = 480px
+        const MAP_HEIGHT = 30;
+        const TANK_SIZE = 32;
+        const BULLET_SPEED = 5;
+        const TANK_SPEED = 2;
+        const ENEMY_SPAWN_INTERVAL = 3000;
+        const MAX_ENEMIES = 4;
+
+        // Game state
+        let score = 0;
+        let level = 1;
+        let lives = 3;
+        let gameRunning = true;
+        let playerTank = null;
+        let enemies = [];
+        let bullets = [];
+        let walls = [];
+        let bricks = [];
+
+        // Direction vectors
+        const DIRECTIONS = {
+            up: { x: 0, y: -1 },
+            down: { x: 0, y: 1 },
+            left: { x: -1, y: 0 },
+            right: { x: 1, y: 0 }
+        };
+
+        // Helper functions
+        function getRandomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function isColliding(rect1, rect2) {
+            return !(
+                rect1.x + rect1.w < rect2.x ||
+                rect1.x > rect2.x + rect2.w ||
+                rect1.y + rect1.h < rect2.y ||
+                rect1.y > rect2.y + rect2.h
+            );
+        }
+
+        function createElement(className, x, y) {
+            const el = document.createElement('div');
+            el.className = className;
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            document.getElementById('game').appendChild(el);
+            return el;
+        }
+
+        // Tank class
+        class Tank {
+            constructor(x, y, isPlayer = false) {
+                this.isPlayer = isPlayer;
+                this.x = x;
+                this.y = y;
+                this.width = TANK_SIZE;
+                this.height = TANK_SIZE;
+                this.direction = 'up';
+                this.speed = TANK_SPEED;
+                this.element = createElement(`tank ${isPlayer ? '' : 'enemy'}`, x, y);
+            }
+
+            draw() {
+                this.element.style.left = this.x + 'px';
+                this.element.style.top = this.y + 'px';
+
+                // Rotate tank based on direction
+                let rotation = 0;
+                switch (this.direction) {
+                    case 'right': rotation = 90; break;
+                    case 'down': rotation = 180; break;
+                    case 'left': rotation = 270; break;
+                }
+                this.element.style.transform = `rotate(${rotation}deg)`;
+            }
+
+            move(dir) {
+                if (!DIRECTIONS[dir]) return;
+                this.direction = dir;
+
+                const dx = DIRECTIONS[dir].x * this.speed;
+                const dy = DIRECTIONS[dir].y * this.speed;
+
+                const newX = this.x + dx;
+                const newY = this.y + dy;
+
+                // Boundary check
+                if (newX < 0 || newX > MAP_WIDTH * GRID_SIZE - this.width ||
+                    newY < 0 || newY > MAP_HEIGHT * GRID_SIZE - this.height) {
+                    return;
+                }
+
+                // Collision with walls/bricks
+                const tankRect = { x: newX, y: newY, w: this.width, h: this.height };
+                for (const wall of [...walls, ...bricks]) {
+                    if (isColliding(tankRect, {
+                        x: parseInt(wall.style.left),
+                        y: parseInt(wall.style.top),
+                        w: parseInt(wall.style.width),
+                        h: parseInt(wall.style.height)
+                    })) {
+                        return;
+                    }
+                }
+
+                // Collision with other tanks
+                for (const tank of (this.isPlayer ? enemies : [playerTank, ...enemies])) {
+                    if (tank === this) continue;
+                    const otherRect =
