@@ -1,6 +1,6 @@
-## Comparison of AI models for creating an analogue of the game Battle City (1985)
+# Comparison of AI models for creating an analogue of the game Battle City (1985)
 
-### Initial conditions
+## Initial conditions
 
 Only one prompt:
 
@@ -16,14 +16,18 @@ The latest free versions of the following AI chats were used:
 6. GigaChat https://giga.chat/
 7. Alice AI https://alice.yandex.ru/
 
-### Results
+## Results
 
 The results are listed from best to worst.
 
-Dec 19, 2025
+### Dec 19, 2025
 
-1. Copilot, Cursor
-2. ChatGPT
-3. Gemini, DeepSeek
-4. GigaChat
-5. Alice AI
+1. Copilot 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/copilot.html), Cursor 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/cursor.html)
+
+2. ChatGPT 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/chatgpt.html)
+
+3. Gemini 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/gemini.html), DeepSeek 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/deepseek.html)
+
+4. GigaChat 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/gigachat.html)
+
+5. Alice AI 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/alice.html)
