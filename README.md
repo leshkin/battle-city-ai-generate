@@ -23,12 +23,14 @@ The results are listed from best to worst.
 
 ### 19-12-2025
 
-1. Copilot 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/copilot.html), Cursor 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/cursor.html), Claude 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/claude.html) (added 20-12-2025)
+1. Copilot 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/copilot.html), Cursor 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/cursor.html)
 
-2. ChatGPT 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/chatgpt.html)
+2. Claude 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/claude.html) (added 20-12-2025)
 
-3. Gemini 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/gemini.html), DeepSeek 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/deepseek.html)
+3. ChatGPT 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/chatgpt.html)
 
-4. GigaChat 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/gigachat.html)
+4. Gemini 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/gemini.html), DeepSeek 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/deepseek.html)
 
-5. Alice AI 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/alice.html)
+5. GigaChat 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/gigachat.html)
+
+6. Alice AI 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/alice.html)
