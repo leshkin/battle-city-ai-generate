@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Battle City</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: #1a1a1a;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        font-family: Arial, sans-serif;
+        touch-action: none;
+      }
+
+      #gameContainer {
+        text-align: center;
+      }
+
+      canvas {
+        border: 4px solid #444;
+        background: #000;
+        display: block;
+        margin: 0 auto;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+
+      #ui {
+        color: #fff;
+        margin-top: 10px;
+        font-size: 18px;
+      }
+
+      #controls {
+        margin-top: 15px;
+        display: none;
+      }
+
+      #dpad {
+        display: grid;
+        grid-template-areas:
+          '. up .'
+          'left . right'
+          '. down .';
+        gap: 5px;
+        width: 150px;
+        margin: 0 auto;
+      }
+
+      .control-btn {
+        width: 45px;
+        height: 45px;
+        background: #333;
+        border: 2px solid #666;
+        color: #fff;
+        font-size: 20px;
+        cursor: pointer;
+        user-select: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 5px;
+      }
+
+      .control-btn:active {
+        background: #555;
+      }
+
+      #up {
+        grid-area: up;
+      }
+      #down {
+        grid-area: down;
+      }
+      #left {
+        grid-area: left;
+      }
+      #right {
+        grid-area: right;
+      }
+
+      #fire {
+        width: 60px;
+        height: 60px;
+        background: #c33;
+        border: 2px solid #f55;
+        color: #fff;
+        font-size: 16px;
+        cursor: pointer;
+        user-select: none;
+        border-radius: 50%;
+        margin: 20px auto 0;
+        display: none;
+      }
+
+      #fire:active {
+        background: #e55;
+      }
+
+      @media (max-width: 600px) {
+        #controls {
+          display: block;
+        }
+        #fire {
+          display: block;
+        }
+      }
+
+      #gameOver {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.9);
+        color: #fff;
+        padding: 40px;
+        border: 3px solid #f55;
+        display: none;
+        text-align: center;
+        z-index: 1000;
+      }
+
+      #gameOver h2 {
+        font-size: 32px;
+        margin-bottom: 20px;
+        color: #f55;
+      }
+
+      #gameOver button {
+        margin-top: 20px;
+        padding: 10px 30px;
+        font-size: 18px;
+        background: #c33;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        border-radius: 5px;
+      }
+
+      #gameOver button:hover {
+        background: #e55;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="gameContainer">
+      <canvas id="game" width="520" height="520"></canvas>
+      <div id="ui">
+        <span>Level: <span id="level">1</span></span> | <span>Score: <span id="score">0</span></span> |
+        <span>Enemies: <span id="enemies">0</span></span>
+      </div>
+      <div id="controls">
+        <div id="dpad">
+          <button class="control-btn" id="up">▲</button>
+          <button class="control-btn" id="left">◄</button>
+          <button class="control-btn" id="right">►</button>
+          <button class="control-btn" id="down">▼</button>
+        </div>
+        <button id="fire">FIRE</button>
+      </div>
+    </div>
+
+    <div id="gameOver">
+      <h2>GAME OVER</h2>
+      <p>Final Score: <span id="finalScore">0</span></p>
+      <p>Level Reached: <span id="finalLevel">1</span></p>
+      <button onclick="location.reload()">Play Again</button>
+    </div>
+
+    <script>
+      const canvas = document.getElementById('game')
+      const ctx = canvas.getContext('2d')
+      const TILE = 20
+      const GRID_W = 26
+      const GRID_H = 26
+
+      let level = 1
+      let score = 0
+      let gameRunning = true
+
+      const keys = {}
+      const grid = []
+
+      class Tank {
+        constructor(x, y, isPlayer = false) {
+          this.x = x
+          this.y = y
+          this.dir = 0 // 0=up, 1=right, 2=down, 3=left
+          this.speed = 2
+          this.isPlayer = isPlayer
+          this.cooldown = 0
+          this.aiTimer = 0
+          this.health = isPlayer ? 3 : 1
+        }
+
+        draw() {
+          ctx.save()
+          ctx.translate(this.x + TILE / 2, this.y + TILE / 2)
+          ctx.rotate((this.dir * Math.PI) / 2)
+          ctx.fillStyle = this.isPlayer ? '#4a4' : '#c33'
+          ctx.fillRect(-TILE / 2, -TILE / 2, TILE, TILE)
+          ctx.fillStyle = this.isPlayer ? '#2a2' : '#a11'
+          ctx.fillRect(-TILE / 3, -TILE / 2, TILE / 1.5, TILE)
+          ctx.fillStyle = '#000'
+          ctx.fillRect(-TILE / 6, -TILE / 2 - 5, TILE / 3, 8)
+          ctx.restore()
+        }
+
+        move(dx, dy) {
+          const nx = this.x + dx
+          const ny = this.y + dy
+
+          if (nx < 0 || nx + TILE > canvas.width || ny < 0 || ny + TILE > canvas.height) {
+            return false
+          }
+
+          if (this.checkCollision(nx, ny, this)) {
+            return false
+          }
+
+          this.x = nx
+          this.y = ny
+          return true
+        }
+
+        checkCollision(x, y, skipTank) {
+          const tx = Math.floor(x / TILE)
+          const ty = Math.floor(y / TILE)
+          const tx2 = Math.floor((x + TILE - 1) / TILE)
+          const ty2 = Math.floor((y + TILE - 1) / TILE)
+
+          for (let gx = tx; gx <= tx2; gx++) {
+            for (let gy = ty; gy <= ty2; gy++) {
+              if (grid[gy] && grid[gy][gx] && grid[gy][gx].solid) {
+                return true
+              }
+            }
+          }
+
+          for (const t of tanks) {
+            if (t === skipTank) continue
+            if (x < t.x + TILE && x + TILE > t.x && y < t.y + TILE && y + TILE > t.y) {
+              return true
+            }
+          }
+
+          return false
+        }
+
+        shoot() {
+          if (this.cooldown > 0) return
+
+          let bx = this.x + TILE / 2 - 3
+          let by = this.y + TILE / 2 - 3
+
+          bullets.push({
+            x: bx,
+            y: by,
+            dir: this.dir,
+            owner: this,
+          })
+
+          this.cooldown = 30
+        }
+
+        update() {
+          if (this.cooldown > 0) this.cooldown--
+
+          if (!this.isPlayer) {
+            this.aiTimer++
+            if (this.aiTimer > 60) {
+              this.dir = Math.floor(Math.random() * 4)
+              this.aiTimer = 0
+            }
+
+            if (Math.random() < 0.02) {
+              this.shoot()
+            }
+
+            const dirs = [
+              [0, -this.speed],
+              [this.speed, 0],
+              [0, this.speed],
+              [-this.speed, 0],
+            ]
+            this.move(dirs[this.dir][0], dirs[this.dir][1])
+          }
+        }
+      }
+
+      const bullets = []
+      const tanks = []
+      let player = null
+
+      function initGrid() {
+        for (let y = 0; y < GRID_H; y++) {
+          grid[y] = []
+          for (let x = 0; x < GRID_W; x++) {
+            grid[y][x] = { solid: false }
+          }
+        }
+
+        // Add random walls
+        for (let i = 0; i < 50 + level * 10; i++) {
+          const x = Math.floor(Math.random() * GRID_W)
+          const y = Math.floor(Math.random() * GRID_H)
+          if (x > 2 && y > 2) {
+            grid[y][x] = { solid: true, type: Math.random() > 0.3 ? 'brick' : 'steel' }
+          }
+        }
+
+        // Protect spawn area
+        for (let y = 0; y < 3; y++) {
+          for (let x = 0; x < 3; x++) {
+            grid[y][x] = { solid: false }
+          }
+        }
+      }
+
+      function initLevel() {
+        tanks.length = 0
+        bullets.length = 0
+        initGrid()
+
+        player = new Tank(TILE, TILE, true)
+        tanks.push(player)
+
+        const enemyCount = 3 + level
+        for (let i = 0; i < enemyCount; i++) {
+          let x, y
+          do {
+            x = Math.floor(Math.random() * (GRID_W - 5) + 3) * TILE
+            y = Math.floor(Math.random() * (GRID_H - 5) + 3) * TILE
+          } while (Math.abs(x - player.x) < 100 && Math.abs(y - player.y) < 100)
+
+          tanks.push(new Tank(x, y, false))
+        }
+      }
+
+      function drawGrid() {
+        for (let y = 0; y < GRID_H; y++) {
+          for (let x = 0; x < GRID_W; x++) {
+            if (grid[y][x].solid) {
+              if (grid[y][x].type === 'steel') {
+                ctx.fillStyle = '#666'
+              } else {
+                ctx.fillStyle = '#a52'
+              }
+              ctx.fillRect(x * TILE, y * TILE, TILE, TILE)
+              ctx.strokeStyle = '#000'
+              ctx.strokeRect(x * TILE, y * TILE, TILE, TILE)
+            }
+          }
+        }
+      }
+
+      function updateBullets() {
+        const dirs = [
+          [0, -4],
+          [4, 0],
+          [0, 4],
+          [-4, 0],
+        ]
+
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i]
+          b.x += dirs[b.dir][0]
+          b.y += dirs[b.dir][1]
+
+          if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+            bullets.splice(i, 1)
+            continue
+          }
+
+          const tx = Math.floor(b.x / TILE)
+          const ty = Math.floor(b.y / TILE)
+
+          if (grid[ty] && grid[ty][tx] && grid[ty][tx].solid) {
+            if (grid[ty][tx].type === 'brick') {
+              grid[ty][tx].solid = false
+            }
+            bullets.splice(i, 1)
+            continue
+          }
+
+          for (let j = tanks.length - 1; j >= 0; j--) {
+            const t = tanks[j]
+            if (t === b.owner) continue
+
+            if (b.x > t.x && b.x < t.x + TILE && b.y > t.y && b.y < t.y + TILE) {
+              t.health--
+              bullets.splice(i, 1)
+
+              if (t.health <= 0) {
+                if (t.isPlayer) {
+                  endGame()
+                } else {
+                  score += 100
+                  tanks.splice(j, 1)
+                }
+              }
+              break
+            }
+          }
+        }
+      }
+
+      function drawBullets() {
+        ctx.fillStyle = '#ff0'
+        for (const b of bullets) {
+          ctx.fillRect(b.x, b.y, 6, 6)
+        }
+      }
+
+      function endGame() {
+        gameRunning = false
+        document.getElementById('finalScore').textContent = score
+        document.getElementById('finalLevel').textContent = level
+        document.getElementById('gameOver').style.display = 'block'
+      }
+
+      function update() {
+        if (!gameRunning) return
+
+        ctx.fillStyle = '#000'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+        drawGrid()
+
+        if (player) {
+          let dx = 0,
+            dy = 0
+          if (keys['ArrowUp'] || keys['w']) {
+            dy = -player.speed
+            player.dir = 0
+          }
+          if (keys['ArrowDown'] || keys['s']) {
+            dy = player.speed
+            player.dir = 2
+          }
+          if (keys['ArrowLeft'] || keys['a']) {
+            dx = -player.speed
+            player.dir = 3
+          }
+          if (keys['ArrowRight'] || keys['d']) {
+            dx = player.speed
+            player.dir = 1
+          }
+
+          if (dx !== 0 || dy !== 0) {
+            player.move(dx, dy)
+          }
+
+          if (keys[' ']) {
+            player.shoot()
+          }
+
+          player.update()
+        }
+
+        for (const tank of tanks) {
+          if (!tank.isPlayer) {
+            tank.update()
+          }
+          tank.draw()
+        }
+
+        updateBullets()
+        drawBullets()
+
+        const enemyCount = tanks.filter((t) => !t.isPlayer).length
+        document.getElementById('level').textContent = level
+        document.getElementById('score').textContent = score
+        document.getElementById('enemies').textContent = enemyCount
+
+        if (enemyCount === 0 && gameRunning) {
+          level++
+          score += 500
+          initLevel()
+        }
+
+        requestAnimationFrame(update)
+      }
+
+      document.addEventListener('keydown', (e) => {
+        keys[e.key] = true
+        if (e.key === ' ') e.preventDefault()
+      })
+
+      document.addEventListener('keyup', (e) => {
+        keys[e.key] = false
+      })
+
+      // Touch controls
+      let touchDir = null
+      document.getElementById('up').addEventListener('touchstart', () => {
+        keys['ArrowUp'] = true
+      })
+      document.getElementById('up').addEventListener('touchend', () => {
+        keys['ArrowUp'] = false
+      })
+      document.getElementById('down').addEventListener('touchstart', () => {
+        keys['ArrowDown'] = true
+      })
+      document.getElementById('down').addEventListener('touchend', () => {
+        keys['ArrowDown'] = false
+      })
+      document.getElementById('left').addEventListener('touchstart', () => {
+        keys['ArrowLeft'] = true
+      })
+      document.getElementById('left').addEventListener('touchend', () => {
+        keys['ArrowLeft'] = false
+      })
+      document.getElementById('right').addEventListener('touchstart', () => {
+        keys['ArrowRight'] = true
+      })
+      document.getElementById('right').addEventListener('touchend', () => {
+        keys['ArrowRight'] = false
+      })
+      document.getElementById('fire').addEventListener('touchstart', (e) => {
+        e.preventDefault()
+        keys[' '] = true
+      })
+      document.getElementById('fire').addEventListener('touchend', () => {
+        keys[' '] = false
+      })
+
+      initLevel()
+      update()
+    </script>
+  </body>
+</html>

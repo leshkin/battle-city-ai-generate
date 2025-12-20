@@ -13,16 +13,17 @@ The latest free versions of the following AI chats were used:
 3. Cursor from IDE
 4. Copilot from VS Code IDE
 5. DeepSeek https://chat.deepseek.com/
-6. GigaChat https://giga.chat/
-7. Alice AI https://alice.yandex.ru/
+6. Claude https://claude.ai/
+7. GigaChat https://giga.chat/
+8. Alice AI https://alice.yandex.ru/
 
 ## Results
 
 The results are listed from best to worst.
 
-### Dec 19, 2025
+### 19-12-2025
 
-1. Copilot 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/copilot.html), Cursor 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/cursor.html)
+1. Copilot 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/copilot.html), Cursor 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/cursor.html), Claude 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/claude.html) (added 20-12-2025)
 
 2. ChatGPT 🎮 [play](https://leshkin.github.io/battle-city-ai-generate/19-12-2025/chatgpt.html)
 
