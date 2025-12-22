@@ -10,8 +10,8 @@ The latest free versions of the following AI chats were used:
 
 1. ChatGPT https://chatgpt.com/
 2. Gemini https://gemini.google.com/
-3. Cursor from IDE
-4. Copilot from VS Code IDE
+3. Cursor IDE https://cursor.com/
+4. Copilot from VS Code IDE https://code.visualstudio.com/
 5. DeepSeek https://chat.deepseek.com/
 6. Claude https://claude.ai/
 7. GigaChat https://giga.chat/
