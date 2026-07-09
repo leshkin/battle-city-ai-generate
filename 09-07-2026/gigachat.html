@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Battle City Clone</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #222; touch-action: none; }
+        #game-container { 
+            position: relative; 
+            width: 100vw; 
+            height: 100vh; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            background-color: #333;
+        }
+        canvas { image-rendering: pixelated; background-color: #000; border: 2px solid #555; }
+        
+        /* UI Overlay */
+        #ui {
+            position: absolute; top: 10px; left: 10px; color: white; font-family: monospace; font-size: 16px; pointer-events: none;
+        }
+        
+        /* Touch Controls */
+        .touch-control {
+            position: absolute; bottom: 20px; width: 80px; height: 80px; opacity: 0.7; transition: opacity 0.2s;
+        }
+        .touch-control:hover, .touch-control:active { opacity: 1.0; }
+        #joystick-base { left: 20px; background: radial-gradient(circle at 30% 30%, #444, #111); border-radius: 50%; border: 2px solid #fff; box-sizing: border-box; }
+        #joystick-knob { 
+            position: absolute; top: 0; left: 0; width: 40px; height: 40px; background: radial-gradient(circle at 30% 30%, #ccc, #777); 
+            border-radius: 50%; border: 2px solid #999; box-sizing: border-box; pointer-events: none;
+        }
+        #fire-button { right: 20px; background: conic-gradient(from 180deg at 50% 50%, #d00, #a00); border-radius: 15px; border: 3px solid #f44; }
+        #fire-button::after { content: 'FIRE'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-weight: bold; text-shadow: 0 0 3px black; }
+
+        /* Game Over Screen */
+        #game-over-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85);
+            display: none; flex-direction: column; justify-content: center; align-items: center; gap: 20px; color: white; z-index: 100;
+            font-family: monospace; text-align: center; padding: 20px;
+        }
+        #final-score { font-size: 2em; font-weight: bold; }
+        #restart-btn {
+            padding: 15px 40px; font-size: 1.2em; cursor: pointer; background: #ffcc00; color: #000; border: 2px solid #aa8800; border-radius: 8px;
+        }
+        #restart-btn:hover { background: #eebb00; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui">Score: 0 | Lives: 3</div>
+        
+        <!-- Touch Controls -->
+        <div id="joystick-base" class="touch-control">
+            <div id="joystick-knob"></div>
+        </div>
+        <div id="fire-button" class="touch-control"></div>
+
+        <!-- Game Over Modal -->
+        <div id="game-over-screen">
+            <h1 id="game-status-text">GAME OVER</h1>
+            <div id="final-score"></div>
+            <button id="restart-btn">RESTART</button>
+        </div>
+    </div>
+
+<script>
+const GAME_WIDTH = 20;
+const GAME_HEIGHT = 15;
+const TILE_SIZE = 32;
+
+let canvas, ctx;
+let scale = 1;
+let lastTime = 0;
+
+// Input state
+const keys = {};
+let touchInput = { x: 0, y: 0, firing: false };
+let inputActive = false;
+
+// Game objects
+let player;
+let enemies = [];
+let bullets = [];
+let walls = [];
+let score = 0;
+let lives = 3;
+let levelCleared = false;
+let spawnTimer = 0;
+let maxEnemies = 4;
+
+// Sounds
+let audioCtx;
+const sounds = {
+    shot: null,
+    explosion: null,
+    powerup: null
+};
+
+function initSounds() {
+    if (!('AudioContext' in window)) return;
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Simple beep for shot
+        const shotOsc = audioCtx.createOscillator();
+        const shotGain = audioCtx.createGain();
+        shotOsc.connect(shotGain).connect(audioCtx.destination);
+        shotOsc.type = 'square';
+        shotOsc.frequency.value = 800;
+        shotGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        shotGain.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.01);
+        shotGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+        shotsBuffer = () => {
+            shotOsc.start();
+            shotOsc.stop(audioCtx.currentTime + 0.2);
+        };
+        sounds.shot = shotsBuffer;
+
+        // Explosion noise
+        sounds.explosion = () => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain).connect(audioCtx.destination);
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.4);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.5);
+        };
+
+        // Power-up ding
+        sounds.powerup = () => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain).connect(audioCtx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.3);
+        };
+    } catch(e) {
+        console.warn("Web Audio API failed:", e);
+        sounds.shot = () => {};
+        sounds.explosion = () => {};
+        sounds.powerup = () => {};
+    }
+}
+
+class Entity {
+    constructor(x, y, w, h, color) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+        this.color = color;
+        this.speed = 2;
+        this.dx = 0;
+        this.dy = 0;
+    }
+    
+    draw(ctx) {
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x * scale, this.y * scale, this.w * scale, this.h * scale);
+    }
+    
+    move() {
+        let nx = this.x + this.dx;
+        let ny = this.y + this.dy;
+        
+        // World bounds check
+        if (nx < 0 || nx + this.w > GAME_WIDTH || ny < 0 || ny + this.h > GAME_HEIGHT) {
+            return false;
+        }
+        
+        // Wall collision check
+        for (let wall of walls) {
+            if (this !== wall && !(wall instanceof Bullet)) {
+                if (nx < wall.x + wall.w && nx + this.w > wall.x &&
+                    ny < wall.y + wall.h && ny + this.h > wall.y) {
+                    return false;
+                }
+            }
+        }
+        
+        this.x = nx;
+        this.y = ny;
+        return true;
+    }
+}
+
+class Tank extends Entity {
+    constructor(x, y, color, isPlayer) {
+        super(x, y, TILE_SIZE, TILE_SIZE, color);
+        this.isPlayer = isPlayer;
+        this.health = 3;
+        this.fireCooldown = 0;
+        this.lastShotDir = {x: 0, y: -1}; // Default up
+    }
+    
+    update(delta) {
+        if (this.fireCooldown > 0) this.fireCooldown -= delta;
+        
+        if (this.isPlayer) {
+            this.handleInput();
+        } else {
+            this.aiMove();
+        }
+        
+        if ((this.dx !== 0 || this.dy !== 0) && this.move()) {
+            this.lastShotDir = {x: this.dx, y: this.dy};
+        } else {
+            this.dx = 0;
+            this.dy = 0;
+        }
+    }
+    
+    handleInput() {
+        this.dx = 0;
+        this.dy = 0;
+        
+        // Keyboard input
+        if (keys['ArrowUp'] || keys['KeyW']) this.dy = -this.speed;
+        if (keys['ArrowDown'] || keys['KeyS']) this.dy = this.speed;
+        if (keys['ArrowLeft'] || keys['KeyA']) this.dx = -this.speed;
+        if (keys['ArrowRight'] || keys['KeyD']) this.dx = this.speed;
+        
+        // Normalize diagonal speed
+        if (this.dx !== 0 && this.dy !== 0) {
+            this.dx *= 0.7;
+            this.dy *= 0.7;
+        }
+
+        // Touch Joystick input
+        if (inputActive) {
+            const deadzone = 0.2;
+            const len = Math.hypot(touchInput.x, touchInput.y);
+            if (len > deadzone) {
+                this.dx = (touchInput.x / len) * this.speed;
+                this.dy = (touchInput.y / len) * this.speed;
+            }
+        }
+
+        // Shooting
+        if ((keys['Space'] || touchInput.firing) && this.fireCooldown <= 0) {
+            shootBullet(this.x + this.w / 2 - 2, this.y + this.h / 2 - 2, this.lastShotDir.x, this.lastShotDir.y, this.isPlayer);
+            this.fireCooldown = 0.4; // seconds
+            if (sounds.shot) sounds.shot();
+        }
+    }
+    
+    aiMove() {
+        if (Math.random() < 0.02) {
+            const dx = player.x - this.x;
+            const dy = player.y - this.y;
+            
+            // Prioritize axis with greater distance
+            if (Math.abs(dx) > Math.abs(dy)) {
+                this.dx = Math.sign(dx) * this.speed;
+                this.dy = 0;
+            } else {
+                this.dx = 0;
+                this.dy = Math.sign(dy) * this.speed;
+            }
+            
+            // Randomly decide to stop or change direction slightly
+            if (Math.random() < 0.1) {
+                this.dx = 0;
+                this.dy = 0;
+            }
+        }
+    }
+    
+    takeDamage() {
+        this.health--;
+        if (sounds.explosion) sounds.explosion();
+        if (this.health <= 0) {
+            if (this.isPlayer) {
+                lives--;
+                resetPlayer();
+            } else {
+                score += 100;
+                updateUI();
+            }
+            return true;
+        }
+        return false;
+    }
+}
+
+class Bullet extends Entity {
+    constructor(x, y, dx, dy, friendly) {
+        super(x, y, 4, 4, friendly ? '#ffff00' : '#ff0000');
+        this.dx = dx * 6;
+        this.dy = dy * 6;
+        this.friendly = friendly;
+        this.lifetime = 2; // seconds
+    }
+    
+    update(delta) {
+        this.lifetime -= delta;
+        if (this.lifetime <= 0) return false;
+        
+        this.x += this.dx * delta;
+        this.y += this.dy * delta;
+        
+        // Out of bounds
+        if (this.x < 0 || this.x > GAME_WIDTH || this.y < 0 || this.y > GAME_HEIGHT) return false;
+        
+        // Collision
+        for (let entity of [...walls, ...enemies, player]) {
+            if (entity && !(entity instanceof Bullet)) {
+                if (friendly !== entity.isPlayer) {
+                    if (this.x < entity.x + entity.w && this.x + this.w > entity.x &&
+                        this.y < entity.y + entity.h && this.y + this.h > entity.y) {
+                        
+                        if (entity.takeDamage) {
+                            if (entity.takeDamage() && !entity.isPlayer) {
+                                createExplosion(entity.x, entity.y);
+                            }
+                        } else if (entity instanceof BrickWall) {
+                            const index = walls.indexOf(entity);
+                            if (index > -1) walls.splice(index, 1);
+                        }
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+}
+
+class BrickWall extends Entity {
+    constructor(x, y) {
+        super(x, y, 1, 1, '#cc8800');
+    }
+}
+
+function shootBullet(x, y, dx, dy, friendly) {
+    bullets.push(new Bullet(x, y, dx, dy, friendly));
+}
+
+function createExplosion(x, y) {
+    // Visual effect could be added here later
+}
+
+function resetPlayer() {
+    player.x = GAME_WIDTH / 2;
+    player.y = GAME_HEIGHT - 2;
+    player.dx = 0;
+    player.dy = 0;
+    player.health = 3;
+    updateUI();
+    if (lives <= 0) endGame(false);
+}
+
+function generateLevel() {
+    walls = [];
+    // Border walls
+    for(let i=0; i<GAME_WIDTH; i++) {
+        walls.push(new BrickWall(i, 0));
+        walls.push(new BrickWall(i, GAME_HEIGHT - 1));
+    }
+    for(let j=1; j<GAME_HEIGHT-1; j++) {
+        walls.push(new BrickWall(0, j));
+        walls.push(new BrickWall(GAME_WIDTH - 1, j));
+    }
+    
+    // Base protection
+    for(let i=-1; i<=1; i++) {
+        for(let j=-1; j<=1; j++) {
+            walls.push(new BrickWall(GAME_WIDTH/2 + i, GAME_HEIGHT - 2 + j));
+        }
+    }
+    
+    // Random bricks
+    for(let i=0; i<40; i++) {
+        let rx = Math.floor(Math.random() * (GAME_WIDTH - 4)) + 2;
+        let ry = Math.floor(Math.random() * (GAME_HEIGHT - 4)) + 2;
+        
+        // Don't place inside base
+        if (Math.abs(rx - GAME_WIDTH/2) <= 1 && Math.abs(ry - (GAME_HEIGHT - 2)) <= 1) continue;
+        
+        walls.push(new BrickWall(rx, ry));
+    }
+}
+
+function startGame() {
+    document.getElementById('game-over-screen').style.display = 'none';
+    score = 0;
+    lives = 3;
+    levelCleared = false;
+    spawnTimer = 0;
+    enemies = [];
+    bullets = [];
+    generateLevel();
+    resetPlayer();
+    updateUI();
+}
+
+function endGame(victory) {
+    levelCleared = false;
+    document.getElementById('game-status-text').textContent = victory ? 'VICTORY!' : 'GAME OVER';
+    document.getElementById('final-score').textContent = `Score: ${score}`;
+    document.getElementById('game-over-screen').style.display = 'flex';
+}
+
+function updateUI() {
+    document.getElementById('ui').textContent = `Score: ${score} | Lives: ${lives}`;
+}
+
+function gameLoop(timestamp) {
+    if (!lastTime) lastTime = timestamp;
+    const delta = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    // Clear canvas
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Spawn enemies
+    if (!levelCleared && enemies.length < maxEnemies) {
+        spawnTimer += delta;
+        if (spawnTimer > 2) {
+            spawnTimer = 0;
+            let ex, ey;
+            do {
+                ex = Math.floor(Math.random() * GAME_WIDTH);
+                ey = 0;
+            } while (Math.abs(ex - player.x) < 4);
+            enemies.push(new Tank(ex, ey, '#00aaff', false));
+        }
+    }
+
+    // Update entities
+    player.update(delta);
+    
+    for(let i = enemies.length - 1; i >= 0; i--) {
+        enemies[i].update(delta);
+        if (enemies[i].health <= 0) {
+            enemies.splice(i, 1);
+            if (enemies.length === 0) levelCleared = true;
+        }
+    }
+    
+    for(let i = bullets.length - 1; i >= 0; i--) {
+        if(!bullets[i].update(delta)) {
+            bullets.splice(i, 1);
+        }
+    }
+
+    // Draw everything
+    walls.forEach(wall => wall.draw(ctx));
+    player.draw(ctx);
+    enemies.forEach(enemy => enemy.draw(ctx));
+    bullets.forEach(bullet => bullet.draw(ctx));
+
+    // Check lose condition
+    if (player.health <= 0 && lives <= 0) {
+        endGame(false);
+        return;
+    }
+
+    // Check win condition (placeholder for next level)
+    if (levelCleared) {
+        maxEnemies++;
+        generateLevel();
+        levelCleared = false;
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// --- INPUT HANDLERS ---
+function setupControls() {
+    // Keyboard
+    window.addEventListener('keydown', (e) => keys[e.code] = true);
+    window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+    // Prevent scrolling on arrow keys
+    window.addEventListener('keydown', function(e) {
+        if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)){
+            e.preventDefault();
+        }
+    }, {passive: false});
+
+    // Touch Joystick
+    const joystickBase = document.getElementById('joystick-base');
+    const joystickKnob = document.getElementById('joystick-knob');
+    let joyOriginX = 0, joyOriginY = 0;
+
+    function getJoystickPos(clientX, clientY) {
+        const rect = joystickBase.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        let x = clientX - centerX;
+        let y = clientY - centerY;
+        
+        const dist = Math.hypot(x, y);
+        const radius = rect.width / 2 - 10;
+        
+        if (dist > radius) {
+            x = (x / dist) * radius;
+            y = (y / dist) * radius;
+        }
+        
+        touchInput.x = x / radius;
+        touchInput.y = y / radius;
+        
+        joystickKnob.style.transform = `translate(${x}px, ${y}px)`;
+    }
+
+    joystickBase.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        inputActive = true;
+        const rect = joystickBase.getBoundingClientRect();
+        joyOriginX = rect.left + rect.width / 2;
+        joyOriginY = rect.top + rect.height / 2;
+        getJoystickPos(e.clientX, e.clientY);
+        joystickBase.setPointerCapture(e.pointerId);
+    });
+
+    joystickBase.addEventListener('pointermove', (e) => {
+        if(inputActive) getJoystickPos(e.clientX, e.clientY);
+    });
+
+    joystickBase.addEventListener('pointerup', (e) => {
+        inputActive = false;
+        touchInput.x = 0; touchInput.y = 0;
+        joystickKnob.style.transform = 'translate(0, 0)';
+    });
+
+    // Fire Button
+    const fireButton = document.getElementById('fire-button');
+    fireButton.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        touchInput.firing = true;
+    });
+    ['pointerup', 'pointerleave'].forEach(evt => {
+        fireButton.addEventListener(evt, () => touchInput.firing = false);
+    });
+}
+
+// --- INITIALIZATION ---
+window.onload = function() {
+    const container = document.getElementById('game-container');
+    canvas = document.getElementById('gameCanvas');
+    ctx = canvas.getContext('2d');
+    
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    setupControls();
+    initSounds();
+    startGame();
+    requestAnimationFrame(gameLoop);
+    
+    document.getElementById('restart-btn').addEventListener('click', startGame);
+};
+
+function resizeCanvas() {
+    const size = Math.min(window.innerWidth, window.innerHeight);
+    const targetSize = Math.floor(size / TILE_SIZE) * TILE_SIZE;
+    
+    canvas.width = GAME_WIDTH * TILE_SIZE;
+    canvas.height = GAME_HEIGHT * TILE_SIZE;
+    
+    scale = targetSize / (GAME_WIDTH * TILE_SIZE);
+    canvas.style.width = (canvas.width * scale) + 'px';
+    canvas.style.height = (canvas.height * scale) + 'px';
+    
+    // Center the game area
+    const ui = document.getElementById('ui');
+    const controls = document.querySelectorAll('.touch-control');
+    const modal = document.getElementById('game-over-screen');
+    
+    const offsetX = (window.innerWidth - canvas.offsetWidth) / 2;
+    const offsetY = (window.innerHeight - canvas.offsetHeight) / 2;
+    
+    canvas.style.position = 'absolute';
+    canvas.style.left = offsetX + 'px';
+    canvas.style.top = offsetY + 'px';
+    
+    ui.style.left = (offsetX + 10) + 'px';
+    ui.style.top = (offsetY + 10) + 'px';
+    
+    // Adjust control positions based on offsets
+    document.getElementById('joystick-base').style.left = (offsetX + 20) + 'px';
+    document.getElementById('joystick-base').style.bottom = (offsetY + 20) + 'px';
+    document.getElementById('fire-button').style.right = (offsetX + 20) + 'px';
+    document.getElementById('fire-button').style.bottom = (offsetY + 20) + 'px';
+    
+    modal.style.fontSize = `${Math.max(14, Math.round(targetSize / 40))}px`;
+}
+</script>
+</body>
+</html>

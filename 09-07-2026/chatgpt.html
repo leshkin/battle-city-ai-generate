@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Mini Battle City</title>
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+        color: #fff;
+        font-family: sans-serif;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        margin: auto;
+        background: #222;
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="g" width="416" height="416"></canvas>
+    <script>
+      const c = document.getElementById('g'),
+        x = c.getContext('2d'),
+        T = 32
+      let keys = {},
+        bullets = [],
+        eb = [],
+        walls = [],
+        touch = { x: 0, y: 0, fire: false }
+      for (let i = 2; i < 11; i++) walls.push({ x: 6 * T, y: i * T })
+      const p = { x: T, y: 12 * T, d: 'u' }
+      let enemies = [
+        { x: 11 * T, y: T, d: 'd' },
+        { x: 9 * T, y: 2 * T, d: 'd' },
+      ]
+      onkeydown = (e) => (keys[e.key] = 1)
+      onkeyup = (e) => (keys[e.key] = 0)
+      c.ontouchstart = c.ontouchmove = (e) => {
+        let r = c.getBoundingClientRect(),
+          t = e.touches[0]
+        touch.x = t.clientX - r.left
+        touch.y = t.clientY - r.top
+        e.preventDefault()
+      }
+      c.ontouchend = (e) => (touch.fire = true)
+      function shoot(o, a) {
+        a.push({ x: o.x + 12, y: o.y + 12, d: o.d, s: o === p ? 6 : 4 })
+      }
+      setInterval(() => shoot(p, bullets), 600)
+      setInterval(() => enemies.forEach((e) => Math.random() < 0.4 && shoot(e, eb)), 1200)
+      function moveTank(t, s) {
+        if (t.d == 'u') t.y -= s
+        if (t.d == 'd') t.y += s
+        if (t.d == 'l') t.x -= s
+        if (t.d == 'r') t.x += s
+      }
+      function loop() {
+        if (keys.ArrowUp) {
+          p.d = 'u'
+          moveTank(p, 2)
+        }
+        if (keys.ArrowDown) {
+          p.d = 'd'
+          moveTank(p, 2)
+        }
+        if (keys.ArrowLeft) {
+          p.d = 'l'
+          moveTank(p, 2)
+        }
+        if (keys.ArrowRight) {
+          p.d = 'r'
+          moveTank(p, 2)
+        }
+        if (touch.x) {
+          let dx = touch.x - p.x,
+            dy = touch.y - p.y
+          if (Math.abs(dx) > Math.abs(dy)) {
+            p.d = dx > 0 ? 'r' : 'l'
+          } else p.d = dy > 0 ? 'd' : 'u'
+          moveTank(p, 2)
+          if (touch.fire) {
+            shoot(p, bullets)
+            touch.fire = false
+          }
+        }
+        bullets.forEach((b) => {
+          if (b.d == 'u') b.y -= b.s
+          if (b.d == 'd') b.y += b.s
+          if (b.d == 'l') b.x -= b.s
+          if (b.d == 'r') b.x += b.s
+          enemies = enemies.filter((e) => !(Math.abs(e.x - b.x) < 20 && Math.abs(e.y - b.y) < 20))
+        })
+        eb.forEach((b) => {
+          if (b.d == 'u') b.y -= b.s
+          if (b.d == 'd') b.y += b.s
+          if (b.d == 'l') b.x -= b.s
+          if (b.d == 'r') b.x += b.s
+          if (Math.abs(p.x - b.x) < 20 && Math.abs(p.y - b.y) < 20) {
+            alert('Game Over')
+            location.reload()
+          }
+        })
+        x.clearRect(0, 0, c.width, c.height)
+        x.fillStyle = 'brown'
+        walls.forEach((w) => x.fillRect(w.x, w.y, T, T))
+        x.fillStyle = 'lime'
+        x.fillRect(p.x, p.y, 24, 24)
+        x.fillStyle = 'red'
+        enemies.forEach((e) => x.fillRect(e.x, e.y, 24, 24))
+        x.fillStyle = 'yellow'
+        bullets.forEach((b) => x.fillRect(b.x, b.y, 6, 6))
+        x.fillStyle = 'orange'
+        eb.forEach((b) => x.fillRect(b.x, b.y, 6, 6))
+        requestAnimationFrame(loop)
+      }
+      loop()
+    </script>
+  </body>
+</html>

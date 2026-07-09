@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Battle City</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        color: #fff;
+        font-family: 'Press Start 2P', system-ui;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        height: 100vh;
+        overflow: hidden;
+        touch-action: none;
+      }
+
+      #game-container {
+        position: relative;
+        margin: 10px;
+      }
+
+      canvas {
+        image-rendering: pixelated;
+        border: 4px solid #fff;
+        box-shadow: 0 0 0 8px #222;
+      }
+
+      #ui {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        display: flex;
+        justify-content: space-between;
+        pointer-events: none;
+        font-size: 14px;
+        z-index: 10;
+      }
+
+      #controls {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        gap: 15px;
+        z-index: 20;
+      }
+
+      .btn {
+        width: 60px;
+        height: 60px;
+        background: rgba(255, 255, 255, 0.2);
+        border: 3px solid #fff;
+        border-radius: 50%;
+        color: white;
+        font-size: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      #start-screen,
+      #game-over-screen {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        font-size: 18px;
+        text-align: center;
+      }
+
+      button {
+        margin-top: 20px;
+        padding: 15px 30px;
+        background: #c00;
+        color: white;
+        border: none;
+        font-family: inherit;
+        font-size: 16px;
+        cursor: pointer;
+      }
+
+      .title {
+        font-size: 32px;
+        color: #ff0;
+        text-shadow: 4px 4px 0 #c00;
+        margin-bottom: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-container">
+      <canvas id="canvas" width="416" height="416"></canvas>
+
+      <div id="ui">
+        <div>SCORE: <span id="score">00000</span></div>
+        <div>LIVES: <span id="lives">3</span></div>
+      </div>
+
+      <div id="controls">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px">
+          <div></div>
+          <div class="btn" id="up">↑</div>
+          <div></div>
+          <div class="btn" id="left">←</div>
+          <div class="btn" id="down">↓</div>
+          <div class="btn" id="right">→</div>
+        </div>
+        <div style="text-align: center; margin-top: 10px">
+          <div class="btn" id="fire" style="width: 80px; height: 80px; font-size: 24px; display: inline-flex">FIRE</div>
+        </div>
+      </div>
+
+      <div id="start-screen">
+        <div class="title">BATTLE CITY</div>
+        <p>PROTECT THE BASE!</p>
+        <button onclick="startGame()">START GAME</button>
+        <div style="margin-top: 30px; font-size: 12px">
+          ARROWS / WASD - MOVE<br />
+          SPACE / FIRE - SHOOT
+        </div>
+      </div>
+
+      <div id="game-over-screen" style="display: none">
+        <div class="title">GAME OVER</div>
+        <p>FINAL SCORE: <span id="final-score">00000</span></p>
+        <button onclick="restartGame()">PLAY AGAIN</button>
+      </div>
+    </div>
+
+    <script>
+      const canvas = document.getElementById('canvas')
+      const ctx = canvas.getContext('2d')
+
+      const TILE_SIZE = 32
+      const MAP_SIZE = 13
+      const CANVAS_SIZE = MAP_SIZE * TILE_SIZE
+
+      // Game variables
+      let map = []
+      let player = {}
+      let enemies = []
+      let bullets = []
+      let explosions = []
+      let score = 0
+      let lives = 3
+      let gameRunning = false
+      let lastTime = 0
+      let keys = {}
+      let touchControls = {}
+
+      // Level design (0=empty, 1=brick, 2=steel, 3=water, 4=grass, 5=base)
+      function createLevel() {
+        return [
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1],
+          [1, 0, 2, 0, 1, 1, 5, 1, 1, 0, 2, 0, 1],
+          [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+          [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+          [1, 0, 2, 0, 1, 1, 1, 1, 1, 0, 2, 0, 1],
+          [1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        ]
+      }
+
+      function initPlayer() {
+        player = {
+          x: 6 * TILE_SIZE + TILE_SIZE / 2,
+          y: 11 * TILE_SIZE + TILE_SIZE / 2,
+          size: TILE_SIZE * 0.9,
+          speed: 2.5,
+          dir: 0, // 0=up, 1=right, 2=down, 3=left
+          shootCooldown: 0,
+          alive: true,
+        }
+      }
+
+      function spawnEnemy() {
+        const spawnPoints = [
+          { x: TILE_SIZE * 1.5, y: TILE_SIZE * 1.5 },
+          { x: TILE_SIZE * 6.5, y: TILE_SIZE * 1.5 },
+          { x: TILE_SIZE * 11.5, y: TILE_SIZE * 1.5 },
+        ]
+
+        const spawn = spawnPoints[Math.floor(Math.random() * spawnPoints.length)]
+
+        enemies.push({
+          x: spawn.x,
+          y: spawn.y,
+          size: TILE_SIZE * 0.9,
+          speed: 1.8,
+          dir: 2,
+          shootCooldown: Math.random() * 60 + 30,
+          alive: true,
+          color: '#c00',
+        })
+      }
+
+      function resetGame() {
+        map = createLevel()
+        bullets = []
+        explosions = []
+        enemies = []
+        score = 0
+        lives = 3
+        updateUI()
+
+        initPlayer()
+
+        // Spawn initial enemies
+        for (let i = 0; i < 3; i++) {
+          spawnEnemy()
+        }
+      }
+
+      function updateUI() {
+        document.getElementById('score').textContent = String(score).padStart(5, '0')
+        document.getElementById('lives').textContent = lives
+      }
+
+      function drawMap() {
+        for (let y = 0; y < MAP_SIZE; y++) {
+          for (let x = 0; x < MAP_SIZE; x++) {
+            const tile = map[y][x]
+            const px = x * TILE_SIZE
+            const py = y * TILE_SIZE
+
+            if (tile === 1) {
+              // Brick
+              ctx.fillStyle = '#c60'
+              ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE)
+              ctx.fillStyle = '#a40'
+              ctx.fillRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8)
+            } else if (tile === 2) {
+              // Steel
+              ctx.fillStyle = '#888'
+              ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE)
+            } else if (tile === 3) {
+              // Water
+              ctx.fillStyle = '#08f'
+              ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE)
+            } else if (tile === 4) {
+              // Grass
+              ctx.fillStyle = '#080'
+              ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE)
+            } else if (tile === 5) {
+              // Base
+              ctx.fillStyle = '#ff0'
+              ctx.fillRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8)
+              ctx.fillStyle = '#f80'
+              ctx.fillRect(px + 10, py + 10, TILE_SIZE - 20, TILE_SIZE - 20)
+            } else {
+              ctx.fillStyle = '#222'
+              ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE)
+            }
+          }
+        }
+      }
+
+      function drawTank(tank, isPlayer) {
+        if (!tank.alive) return
+
+        ctx.save()
+        ctx.translate(tank.x, tank.y)
+
+        // Rotate
+        ctx.rotate((tank.dir * Math.PI) / 2)
+
+        // Body
+        ctx.fillStyle = isPlayer ? '#0a0' : tank.color
+        ctx.fillRect(-tank.size / 2, -tank.size / 2, tank.size, tank.size)
+
+        // Tracks
+        ctx.fillStyle = '#333'
+        ctx.fillRect(-tank.size / 2 - 4, -tank.size / 2 + 6, 6, tank.size - 12)
+        ctx.fillRect(tank.size / 2 - 2, -tank.size / 2 + 6, 6, tank.size - 12)
+
+        // Barrel
+        ctx.fillStyle = '#555'
+        ctx.fillRect(0, -6, tank.size / 2 + 4, 12)
+
+        // Turret
+        ctx.fillStyle = isPlayer ? '#0c0' : '#f44'
+        ctx.fillRect(-tank.size / 3, -tank.size / 3, (tank.size * 2) / 3, (tank.size * 2) / 3)
+
+        ctx.restore()
+      }
+
+      function drawBullet(bullet) {
+        ctx.fillStyle = '#ff0'
+        ctx.fillRect(bullet.x - 3, bullet.y - 3, 6, 6)
+      }
+
+      function drawExplosion(exp) {
+        const alpha = Math.max(0, exp.life / 15)
+        ctx.save()
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = '#ff0'
+        ctx.beginPath()
+        ctx.arc(exp.x, exp.y, exp.size, 0, Math.PI * 2)
+        ctx.fill()
+
+        ctx.fillStyle = '#f80'
+        ctx.beginPath()
+        ctx.arc(exp.x, exp.y, exp.size * 0.6, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      }
+
+      function updatePlayer() {
+        if (!player.alive) return
+
+        let moved = false
+        let newX = player.x
+        let newY = player.y
+
+        if (keys['ArrowUp'] || keys['w'] || keys['W']) {
+          player.dir = 0
+          newY -= player.speed
+          moved = true
+        }
+        if (keys['ArrowDown'] || keys['s'] || keys['S']) {
+          player.dir = 2
+          newY += player.speed
+          moved = true
+        }
+        if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
+          player.dir = 3
+          newX -= player.speed
+          moved = true
+        }
+        if (keys['ArrowRight'] || keys['d'] || keys['D']) {
+          player.dir = 1
+          newX += player.speed
+          moved = true
+        }
+
+        // Shoot
+        if ((keys[' '] || keys['Space']) && player.shootCooldown <= 0) {
+          shoot(player)
+          player.shootCooldown = 18
+        }
+
+        if (player.shootCooldown > 0) player.shootCooldown--
+
+        if (moved) {
+          // Check collision with walls
+          if (!checkCollision(newX, player.y, player.size)) {
+            player.x = newX
+          }
+          if (!checkCollision(player.x, newY, player.size)) {
+            player.y = newY
+          }
+
+          // Keep in bounds
+          player.x = Math.max(player.size / 2, Math.min(CANVAS_SIZE - player.size / 2, player.x))
+          player.y = Math.max(player.size / 2, Math.min(CANVAS_SIZE - player.size / 2, player.y))
+        }
+      }
+
+      function updateEnemies() {
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          const enemy = enemies[i]
+          if (!enemy.alive) continue
+
+          // Simple AI: move and occasionally change direction
+          if (Math.random() < 0.02) {
+            enemy.dir = Math.floor(Math.random() * 4)
+          }
+
+          let newX = enemy.x
+          let newY = enemy.y
+
+          if (enemy.dir === 0) newY -= enemy.speed
+          else if (enemy.dir === 2) newY += enemy.speed
+          else if (enemy.dir === 3) newX -= enemy.speed
+          else if (enemy.dir === 1) newX += enemy.speed
+
+          // Try move
+          if (!checkCollision(newX, enemy.y, enemy.size)) {
+            enemy.x = newX
+          } else {
+            enemy.dir = (enemy.dir + 1) % 4
+          }
+
+          if (!checkCollision(enemy.x, newY, enemy.size)) {
+            enemy.y = newY
+          }
+
+          // Shoot randomly
+          enemy.shootCooldown--
+          if (enemy.shootCooldown <= 0) {
+            shoot(enemy)
+            enemy.shootCooldown = 45 + Math.random() * 40
+          }
+
+          // Keep in bounds
+          enemy.x = Math.max(enemy.size / 2, Math.min(CANVAS_SIZE - enemy.size / 2, enemy.x))
+          enemy.y = Math.max(enemy.size / 2, Math.min(CANVAS_SIZE - enemy.size / 2, enemy.y))
+        }
+      }
+
+      function shoot(tank) {
+        const speed = 7
+        let bx = tank.x
+        let by = tank.y
+        let dx = 0
+        let dy = 0
+
+        if (tank.dir === 0) dy = -speed
+        else if (tank.dir === 2) dy = speed
+        else if (tank.dir === 3) dx = -speed
+        else if (tank.dir === 1) dx = speed
+
+        bullets.push({
+          x: bx,
+          y: by,
+          dx: dx,
+          dy: dy,
+          owner: tank === player ? 'player' : 'enemy',
+          life: 80,
+        })
+      }
+
+      function updateBullets() {
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i]
+          b.x += b.dx
+          b.y += b.dy
+          b.life--
+
+          if (b.life <= 0) {
+            bullets.splice(i, 1)
+            continue
+          }
+
+          // Check wall collision
+          const tileX = Math.floor(b.x / TILE_SIZE)
+          const tileY = Math.floor(b.y / TILE_SIZE)
+
+          if (tileX < 0 || tileX >= MAP_SIZE || tileY < 0 || tileY >= MAP_SIZE) {
+            bullets.splice(i, 1)
+            continue
+          }
+
+          const tile = map[tileY][tileX]
+
+          if (tile === 1 || tile === 2) {
+            // Brick or Steel
+            if (tile === 1) {
+              map[tileY][tileX] = 0 // Destroy brick
+            }
+            createExplosion(b.x, b.y, 18)
+            bullets.splice(i, 1)
+            continue
+          }
+
+          // Check base
+          if (tile === 5) {
+            createExplosion(b.x, b.y, 30)
+            bullets.splice(i, 1)
+            endGame()
+            return
+          }
+        }
+      }
+
+      function checkCollisions() {
+        // Player bullets vs enemies
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i]
+          if (b.owner !== 'player') continue
+
+          for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j]
+            if (!e.alive) continue
+
+            if (Math.abs(b.x - e.x) < e.size / 1.6 && Math.abs(b.y - e.y) < e.size / 1.6) {
+              e.alive = false
+              createExplosion(e.x, e.y, 28)
+              bullets.splice(i, 1)
+              score += 100
+              updateUI()
+
+              // Respawn enemy
+              setTimeout(() => {
+                if (gameRunning && enemies.filter((en) => en.alive).length < 4) {
+                  spawnEnemy()
+                }
+              }, 1200)
+              break
+            }
+          }
+        }
+
+        // Enemy bullets vs player
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i]
+          if (b.owner !== 'enemy') continue
+
+          if (Math.abs(b.x - player.x) < player.size / 1.6 && Math.abs(b.y - player.y) < player.size / 1.6) {
+            player.alive = false
+            createExplosion(player.x, player.y, 32)
+            bullets.splice(i, 1)
+
+            lives--
+            updateUI()
+
+            if (lives > 0) {
+              setTimeout(() => {
+                if (gameRunning) {
+                  initPlayer()
+                }
+              }, 800)
+            } else {
+              endGame()
+            }
+            return
+          }
+        }
+      }
+
+      function createExplosion(x, y, size) {
+        explosions.push({
+          x: x,
+          y: y,
+          size: size,
+          life: 18,
+        })
+      }
+
+      function updateExplosions() {
+        for (let i = explosions.length - 1; i >= 0; i--) {
+          explosions[i].life--
+          if (explosions[i].life <= 0) {
+            explosions.splice(i, 1)
+          }
+        }
+      }
+
+      function checkCollision(x, y, size) {
+        const half = size / 2
+
+        // Check 4 corners
+        const points = [
+          [x - half, y - half],
+          [x + half, y - half],
+          [x - half, y + half],
+          [x + half, y + half],
+        ]
+
+        for (let p of points) {
+          const tx = Math.floor(p[0] / TILE_SIZE)
+          const ty = Math.floor(p[1] / TILE_SIZE)
+
+          if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) return true
+
+          const tile = map[ty][tx]
+          if (tile === 1 || tile === 2 || tile === 5 || tile === 3) {
+            return true
+          }
+        }
+        return false
+      }
+
+      function gameLoop(timestamp) {
+        if (!lastTime) lastTime = timestamp
+        const dt = timestamp - lastTime
+        lastTime = timestamp
+
+        if (!gameRunning) {
+          requestAnimationFrame(gameLoop)
+          return
+        }
+
+        ctx.fillStyle = '#111'
+        ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
+
+        drawMap()
+
+        updatePlayer()
+        updateEnemies()
+        updateBullets()
+        checkCollisions()
+        updateExplosions()
+
+        // Draw player
+        drawTank(player, true)
+
+        // Draw enemies
+        for (let enemy of enemies) {
+          if (enemy.alive) drawTank(enemy, false)
+        }
+
+        // Draw bullets
+        for (let bullet of bullets) {
+          drawBullet(bullet)
+        }
+
+        // Draw explosions
+        for (let exp of explosions) {
+          drawExplosion(exp)
+        }
+
+        // Grass overlay
+        for (let y = 0; y < MAP_SIZE; y++) {
+          for (let x = 0; x < MAP_SIZE; x++) {
+            if (map[y][x] === 4) {
+              ctx.fillStyle = 'rgba(0, 100, 0, 0.7)'
+              ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+            }
+          }
+        }
+
+        // Win condition (all enemies dead and no more spawning)
+        if (enemies.length > 0 && enemies.every((e) => !e.alive)) {
+          score += 500
+          updateUI()
+          setTimeout(() => {
+            if (gameRunning) alert('STAGE CLEAR! You Win!')
+            endGame()
+          }, 300)
+        }
+
+        requestAnimationFrame(gameLoop)
+      }
+
+      function startGame() {
+        document.getElementById('start-screen').style.display = 'none'
+        gameRunning = true
+        resetGame()
+        requestAnimationFrame(gameLoop)
+      }
+
+      function endGame() {
+        gameRunning = false
+        document.getElementById('final-score').textContent = String(score).padStart(5, '0')
+        document.getElementById('game-over-screen').style.display = 'flex'
+      }
+
+      function restartGame() {
+        document.getElementById('game-over-screen').style.display = 'none'
+        resetGame()
+        gameRunning = true
+        requestAnimationFrame(gameLoop)
+      }
+
+      // Input handling
+      function setupInput() {
+        window.addEventListener('keydown', (e) => {
+          keys[e.key] = true
+
+          if (e.key === ' ' && gameRunning) {
+            e.preventDefault()
+          }
+        })
+
+        window.addEventListener('keyup', (e) => {
+          keys[e.key] = false
+        })
+
+        // Mobile controls
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+        if (isMobile) {
+          document.getElementById('controls').style.display = 'block'
+
+          const dirs = ['up', 'down', 'left', 'right']
+
+          dirs.forEach((dir) => {
+            const el = document.getElementById(dir)
+            el.addEventListener('touchstart', (e) => {
+              e.preventDefault()
+              touchControls[dir] = true
+              keys[`Arrow${dir.charAt(0).toUpperCase() + dir.slice(1)}`] = true
+            })
+            el.addEventListener('touchend', (e) => {
+              e.preventDefault()
+              touchControls[dir] = false
+              keys[`Arrow${dir.charAt(0).toUpperCase() + dir.slice(1)}`] = false
+            })
+          })
+
+          const fireBtn = document.getElementById('fire')
+          fireBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault()
+            if (gameRunning && player.alive) {
+              shoot(player)
+            }
+          })
+        }
+
+        // Mouse click to shoot (desktop)
+        canvas.addEventListener('click', () => {
+          if (gameRunning && player.alive) {
+            shoot(player)
+          }
+        })
+      }
+
+      // Initialize
+      window.onload = function () {
+        setupInput()
+        // Show start screen
+        // Game will start when user clicks START
+      }
+    </script>
+  </body>
+</html>

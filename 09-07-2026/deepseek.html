@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Battle City · tank duel</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        background: #0a0f1e;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+        touch-action: pan-y;
+      }
+      .game-wrapper {
+        background: #1a1f2e;
+        padding: 1rem 1rem 1.2rem;
+        border-radius: 2.5rem;
+        box-shadow:
+          0 20px 35px rgba(0, 0, 0, 0.7),
+          inset 0 1px 3px rgba(255, 255, 255, 0.08);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        max-width: 480px;
+        aspect-ratio: 13 / 13;
+        background: #222b3c;
+        border-radius: 1.8rem;
+        box-shadow:
+          inset 0 0 0 2px #3e4a5e,
+          0 10px 20px rgba(0, 0, 0, 0.6);
+        image-rendering: crisp-edges;
+        touch-action: none;
+        cursor: crosshair;
+      }
+      .status-panel {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+        max-width: 480px;
+        margin-top: 1rem;
+        padding: 0.3rem 0.8rem;
+        color: #b7cdff;
+        font-weight: 600;
+        text-shadow: 0 2px 3px #0a0e18;
+        letter-spacing: 0.5px;
+        background: #141b28;
+        border-radius: 3rem;
+        box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.6);
+      }
+      .score-box {
+        background: #0b111c;
+        padding: 0.4rem 1.2rem;
+        border-radius: 2rem;
+        font-size: 1.2rem;
+        border: 1px solid #3d506a;
+        color: #d6e6ff;
+      }
+      .restart-btn {
+        background: #2c3d5a;
+        border: none;
+        color: white;
+        font-size: 1.1rem;
+        font-weight: bold;
+        padding: 0.3rem 1.6rem;
+        border-radius: 3rem;
+        box-shadow:
+          0 4px 0 #0f1622,
+          0 6px 10px rgba(0, 0, 0, 0.4);
+        transition: 0.07s ease;
+        touch-action: manipulation;
+        cursor: pointer;
+        letter-spacing: 0.8px;
+        border: 1px solid #5f77a0;
+      }
+      .restart-btn:active {
+        transform: translateY(4px);
+        box-shadow: 0 1px 0 #0f1622;
+      }
+      .controls-hint {
+        display: flex;
+        gap: 1.2rem;
+        color: #6d84aa;
+        font-size: 0.7rem;
+        font-weight: 500;
+        margin-top: 0.4rem;
+        padding: 0 0.4rem;
+      }
+      @media (max-width: 520px) {
+        .game-wrapper {
+          padding: 0.7rem;
+          border-radius: 2rem;
+        }
+        .score-box {
+          font-size: 1rem;
+          padding: 0.2rem 1rem;
+        }
+        .restart-btn {
+          font-size: 0.9rem;
+          padding: 0.2rem 1.2rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="game-wrapper">
+      <canvas id="gameCanvas" width="520" height="520"></canvas>
+      <div class="status-panel">
+        <span class="score-box">🏆 <span id="scoreDisplay">0</span></span>
+        <button class="restart-btn" id="restartButton">↺ restart</button>
+      </div>
+      <div class="controls-hint">
+        <span>⬆⬇⬅➡ / WASD</span>
+        <span>•</span>
+        <span>📱 touch & drag</span>
+      </div>
+    </div>
+    <script>
+      ;(function () {
+        // ---------- BATTLE CITY · single-file ----------
+        const canvas = document.getElementById('gameCanvas')
+        const ctx = canvas.getContext('2d')
+        const scoreSpan = document.getElementById('scoreDisplay')
+
+        // ---------- constants ----------
+        const COLS = 13 // 13x13 grid
+        const ROWS = 13
+        const CELL_SIZE = 40 // 520/13
+        const PLAYER_SPEED = 2.1
+        const BULLET_SPEED = 5.2
+        const ENEMY_SPEED = 0.8
+        const MAX_ENEMIES = 4
+        const SPAWN_COOLDOWN_MAX = 80 // frames
+
+        // ---------- game state ----------
+        let player = {
+          x: 6,
+          y: 12, // grid coords (top-left)
+          dir: 0, // 0=up,1=right,2=down,3=left
+          moving: false,
+          alive: true,
+          cooldown: 0,
+        }
+        let enemies = []
+        let bullets = []
+        let walls = []
+        let base = { x: 6, y: 12, alive: true } // base under player spawn
+        let score = 0
+        let gameOver = false
+        let frame = 0
+        let spawnTimer = 0
+
+        // ---------- input (keyboard + touch) ----------
+        const keys = {
+          ArrowUp: false,
+          ArrowDown: false,
+          ArrowLeft: false,
+          ArrowRight: false,
+          w: false,
+          a: false,
+          s: false,
+          d: false,
+          space: false,
+        }
+        let touchX = null,
+          touchY = null // normalized 0..1
+        let touchActive = false
+
+        // ---------- reset / init ----------
+        function initGame() {
+          // player spawn (center-bottom)
+          player = {
+            x: 6,
+            y: 11,
+            dir: 0,
+            moving: false,
+            alive: true,
+            cooldown: 0,
+          }
+          enemies = []
+          bullets = []
+          base = { x: 6, y: 12, alive: true }
+          score = 0
+          gameOver = false
+          frame = 0
+          spawnTimer = 0
+          updateScore()
+          buildWalls()
+        }
+
+        // build classic base + random blocks
+        function buildWalls() {
+          walls = []
+          // base fortress (brick pattern)
+          const baseWalls = [
+            [5, 12],
+            [7, 12],
+            [5, 11],
+            [6, 11],
+            [7, 11],
+            [6, 10],
+          ]
+          baseWalls.forEach(([cx, cy]) => {
+            if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS) {
+              walls.push({ x: cx, y: cy, type: 'brick' })
+            }
+          })
+          // some random bricks (avoid player start & base)
+          const reserved = new Set()
+          reserved.add('6,11')
+          reserved.add('6,12')
+          reserved.add('5,12')
+          reserved.add('7,12')
+          reserved.add('5,11')
+          reserved.add('7,11')
+          reserved.add('6,10')
+          for (let i = 0; i < 22; i++) {
+            let rx = Math.floor(Math.random() * COLS)
+            let ry = Math.floor(Math.random() * ROWS)
+            // avoid top-left spawn area & center base & already placed
+            if (
+              (rx >= 4 && rx <= 8 && ry >= 10 && ry <= 12) ||
+              (rx >= 0 && rx <= 3 && ry >= 0 && ry <= 3) ||
+              reserved.has(`${rx},${ry}`)
+            ) {
+              continue
+            }
+            // avoid overlapping with existing walls
+            if (!walls.some((w) => w.x === rx && w.y === ry)) {
+              walls.push({ x: rx, y: ry, type: 'brick' })
+              reserved.add(`${rx},${ry}`)
+            }
+          }
+        }
+
+        // ---------- helpers ----------
+        function posToPixel(gx, gy) {
+          return { px: gx * CELL_SIZE + CELL_SIZE / 2, py: gy * CELL_SIZE + CELL_SIZE / 2 }
+        }
+
+        function isSolid(gx, gy, ignoreEnemy = false) {
+          if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return true
+          // walls
+          if (walls.some((w) => w.x === gx && w.y === gy)) return true
+          // base (if alive)
+          if (base.alive && base.x === gx && base.y === gy) return true
+          // enemies (block movement)
+          if (!ignoreEnemy && enemies.some((e) => e.alive && Math.floor(e.x) === gx && Math.floor(e.y) === gy))
+            return true
+          // player (for enemy collision)
+          if (player.alive && Math.floor(player.x) === gx && Math.floor(player.y) === gy) return true
+          return false
+        }
+
+        function isWalkable(gx, gy, ignoreEnemy = false) {
+          return !isSolid(gx, gy, ignoreEnemy)
+        }
+
+        // ---------- spawn enemy ----------
+        function spawnEnemy() {
+          if (enemies.filter((e) => e.alive).length >= MAX_ENEMIES) return false
+          // spawn from top edge (random x)
+          let attempts = 20
+          while (attempts--) {
+            let sx = Math.floor(Math.random() * COLS)
+            let sy = 0
+            // avoid player spawn & base & walls
+            if (sx >= 5 && sx <= 7 && sy <= 1) continue
+            if (isSolid(sx, sy, true)) continue
+            // check no enemy already there
+            if (enemies.some((e) => e.alive && Math.floor(e.x) === sx && Math.floor(e.y) === sy)) continue
+            enemies.push({
+              x: sx,
+              y: sy,
+              dir: 2, // down
+              alive: true,
+              cooldown: 0,
+              moveCounter: 0,
+            })
+            return true
+          }
+          return false
+        }
+
+        // ---------- shoot ----------
+        function shoot(origin, dir, isPlayer = true) {
+          let startX = origin.x
+          let startY = origin.y
+          // offset from center
+          const offX = [0, 0.6, 0, -0.6]
+          const offY = [-0.6, 0, 0.6, 0]
+          let bx = startX + offX[dir]
+          let by = startY + offY[dir]
+          // clamp to grid
+          bx = Math.min(Math.max(bx, 0.2), COLS - 0.2)
+          by = Math.min(Math.max(by, 0.2), ROWS - 0.2)
+          bullets.push({
+            x: bx,
+            y: by,
+            dir: dir,
+            isPlayer: isPlayer,
+            alive: true,
+          })
+        }
+
+        // ---------- update ----------
+        function update() {
+          if (gameOver) return
+          frame++
+
+          // ---- player input ----
+          let moveX = 0,
+            moveY = 0
+          let wantDir = player.dir
+          if (keys.ArrowUp || keys.w) {
+            moveY = -1
+            wantDir = 0
+          } else if (keys.ArrowDown || keys.s) {
+            moveY = 1
+            wantDir = 2
+          } else if (keys.ArrowLeft || keys.a) {
+            moveX = -1
+            wantDir = 3
+          } else if (keys.ArrowRight || keys.d) {
+            moveX = 1
+            wantDir = 1
+          }
+
+          // touch override
+          if (touchActive && touchX !== null && touchY !== null) {
+            const cx = player.x,
+              cy = player.y
+            const dx = touchX - cx / COLS
+            const dy = touchY - cy / ROWS
+            const threshold = 0.12
+            if (Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
+              if (Math.abs(dx) > Math.abs(dy)) {
+                moveX = dx > 0 ? 1 : -1
+                moveY = 0
+                wantDir = dx > 0 ? 1 : 3
+              } else {
+                moveY = dy > 0 ? 1 : -1
+                moveX = 0
+                wantDir = dy > 0 ? 2 : 0
+              }
+            } else {
+              moveX = 0
+              moveY = 0
+            }
+          }
+
+          // shooting (space or tap)
+          const shootNow =
+            keys.space ||
+            (touchActive &&
+              touchX !== null &&
+              touchY !== null &&
+              Math.abs(touchX - player.x / COLS) < 0.25 &&
+              Math.abs(touchY - player.y / ROLS) < 0.25)
+          // simplified: we shoot if touch on tank or space
+          if (shootNow && player.cooldown <= 0 && player.alive) {
+            shoot(player, player.dir, true)
+            player.cooldown = 12
+          } else if (player.cooldown > 0) {
+            player.cooldown--
+          }
+
+          // ---- move player ----
+          if (player.alive && (moveX !== 0 || moveY !== 0)) {
+            let newX = player.x + (moveX * PLAYER_SPEED) / CELL_SIZE
+            let newY = player.y + (moveY * PLAYER_SPEED) / CELL_SIZE
+            // check collision with walls/base/enemies (grid-aligned)
+            const testX = Math.round(newX)
+            const testY = Math.round(newY)
+            // more precise: check if the bounding box overlaps solid cells
+            let canMove = true
+            // check four corners of the tank (approx 0.6 cell size)
+            const radius = 0.3
+            const corners = [
+              [newX - radius, newY - radius],
+              [newX + radius, newY - radius],
+              [newX - radius, newY + radius],
+              [newX + radius, newY + radius],
+            ]
+            for (let [cx, cy] of corners) {
+              const gx = Math.round(cx)
+              const gy = Math.round(cy)
+              if (isSolid(gx, gy, false)) {
+                canMove = false
+                break
+              }
+            }
+            if (canMove) {
+              player.x = Math.min(Math.max(newX, 0.2), COLS - 0.2)
+              player.y = Math.min(Math.max(newY, 0.2), ROWS - 0.2)
+              player.dir = wantDir
+            } else {
+              // try sliding along axis
+              let slideX = player.x + (moveX * PLAYER_SPEED) / CELL_SIZE
+              let slideY = player.y
+              let canSlideX = true
+              for (let [cx, cy] of [
+                [slideX - 0.3, slideY - 0.3],
+                [slideX + 0.3, slideY - 0.3],
+                [slideX - 0.3, slideY + 0.3],
+                [slideX + 0.3, slideY + 0.3],
+              ]) {
+                if (isSolid(Math.round(cx), Math.round(cy), false)) {
+                  canSlideX = false
+                  break
+                }
+              }
+              if (canSlideX) {
+                player.x = Math.min(Math.max(slideX, 0.2), COLS - 0.2)
+              } else {
+                slideX = player.x
+                slideY = player.y + (moveY * PLAYER_SPEED) / CELL_SIZE
+                let canSlideY = true
+                for (let [cx, cy] of [
+                  [slideX - 0.3, slideY - 0.3],
+                  [slideX + 0.3, slideY - 0.3],
+                  [slideX - 0.3, slideY + 0.3],
+                  [slideX + 0.3, slideY + 0.3],
+                ]) {
+                  if (isSolid(Math.round(cx), Math.round(cy), false)) {
+                    canSlideY = false
+                    break
+                  }
+                }
+                if (canSlideY) {
+                  player.y = Math.min(Math.max(slideY, 0.2), ROWS - 0.2)
+                }
+              }
+            }
+          }
+
+          // ---- enemy AI ----
+          for (let e of enemies) {
+            if (!e.alive) continue
+            e.moveCounter = (e.moveCounter || 0) + 1
+            // change direction randomly
+            if (e.moveCounter % 30 === 0 || Math.random() < 0.02) {
+              e.dir = Math.floor(Math.random() * 4)
+            }
+            // try move
+            let dx = 0,
+              dy = 0
+            if (e.dir === 0) dy = -1
+            else if (e.dir === 1) dx = 1
+            else if (e.dir === 2) dy = 1
+            else if (e.dir === 3) dx = -1
+            let newX = e.x + (dx * ENEMY_SPEED) / CELL_SIZE
+            let newY = e.y + (dy * ENEMY_SPEED) / CELL_SIZE
+            let canMove = true
+            const radius = 0.3
+            for (let [cx, cy] of [
+              [newX - radius, newY - radius],
+              [newX + radius, newY - radius],
+              [newX - radius, newY + radius],
+              [newX + radius, newY + radius],
+            ]) {
+              if (isSolid(Math.round(cx), Math.round(cy), true)) {
+                canMove = false
+                break
+              }
+            }
+            if (canMove) {
+              e.x = Math.min(Math.max(newX, 0.2), COLS - 0.2)
+              e.y = Math.min(Math.max(newY, 0.2), ROWS - 0.2)
+            } else {
+              e.dir = (e.dir + 1 + Math.floor(Math.random() * 3)) % 4
+            }
+
+            // enemy shooting
+            if (e.cooldown <= 0 && e.alive) {
+              shoot(e, e.dir, false)
+              e.cooldown = 25 + Math.floor(Math.random() * 20)
+            } else if (e.cooldown > 0) {
+              e.cooldown--
+            }
+          }
+
+          // ---- bullets ----
+          for (let b of bullets) {
+            if (!b.alive) continue
+            const dx = [0, 1, 0, -1][b.dir]
+            const dy = [-1, 0, 1, 0][b.dir]
+            b.x += (dx * BULLET_SPEED) / CELL_SIZE
+            b.y += (dy * BULLET_SPEED) / CELL_SIZE
+
+            // wall / base collision
+            let hit = false
+            const gx = Math.round(b.x)
+            const gy = Math.round(b.y)
+            // wall
+            const wallIdx = walls.findIndex((w) => w.x === gx && w.y === gy)
+            if (wallIdx !== -1) {
+              walls.splice(wallIdx, 1)
+              hit = true
+            }
+            // base
+            if (base.alive && base.x === gx && base.y === gy) {
+              base.alive = false
+              hit = true
+              gameOver = true
+            }
+            // enemy hit
+            if (b.isPlayer) {
+              for (let e of enemies) {
+                if (!e.alive) continue
+                if (Math.abs(e.x - b.x) < 0.5 && Math.abs(e.y - b.y) < 0.5) {
+                  e.alive = false
+                  hit = true
+                  score += 10
+                  updateScore()
+                  break
+                }
+              }
+            } else {
+              // enemy bullet hits player
+              if (player.alive && Math.abs(player.x - b.x) < 0.5 && Math.abs(player.y - b.y) < 0.5) {
+                player.alive = false
+                gameOver = true
+                hit = true
+              }
+            }
+            if (hit || b.x < 0 || b.x >= COLS || b.y < 0 || b.y >= ROWS) {
+              b.alive = false
+            }
+          }
+          bullets = bullets.filter((b) => b.alive)
+
+          // ---- spawn enemies ----
+          if (frame % SPAWN_COOLDOWN_MAX === 0 && !gameOver) {
+            spawnEnemy()
+          }
+
+          // ---- respawn player if dead? no, game over ----
+          if (!player.alive) gameOver = true
+          // clean dead enemies
+          enemies = enemies.filter((e) => e.alive)
+        }
+
+        // ---------- render ----------
+        function render() {
+          ctx.clearRect(0, 0, 520, 520)
+          // background grid
+          for (let i = 0; i < COLS; i++) {
+            for (let j = 0; j < ROWS; j++) {
+              ctx.fillStyle = (i + j) % 2 === 0 ? '#2b3548' : '#1f283a'
+              ctx.fillRect(i * CELL_SIZE, j * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+            }
+          }
+
+          // walls
+          for (let w of walls) {
+            ctx.fillStyle = '#c9a87c'
+            ctx.shadowColor = '#6b5a3e'
+            ctx.shadowBlur = 6
+            ctx.fillRect(w.x * CELL_SIZE + 2, w.y * CELL_SIZE + 2, CELL_SIZE - 4, CELL_SIZE - 4)
+            ctx.shadowBlur = 0
+            ctx.fillStyle = '#b38b5a'
+            ctx.fillRect(w.x * CELL_SIZE + 4, w.y * CELL_SIZE + 4, CELL_SIZE - 10, CELL_SIZE - 10)
+          }
+
+          // base
+          if (base.alive) {
+            ctx.fillStyle = '#e8b84b'
+            ctx.shadowBlur = 12
+            ctx.shadowColor = '#f0c060'
+            ctx.beginPath()
+            ctx.arc(base.x * CELL_SIZE + CELL_SIZE / 2, base.y * CELL_SIZE + CELL_SIZE / 2, 14, 0, 2 * Math.PI)
+            ctx.fill()
+            ctx.shadowBlur = 0
+            ctx.fillStyle = '#cc9f3a'
+            ctx.beginPath()
+            ctx.arc(base.x * CELL_SIZE + CELL_SIZE / 2, base.y * CELL_SIZE + CELL_SIZE / 2, 8, 0, 2 * Math.PI)
+            ctx.fill()
+          }
+
+          // enemies
+          for (let e of enemies) {
+            if (!e.alive) continue
+            const cx = e.x * CELL_SIZE + CELL_SIZE / 2
+            const cy = e.y * CELL_SIZE + CELL_SIZE / 2
+            ctx.fillStyle = '#d94f4f'
+            ctx.shadowBlur = 10
+            ctx.shadowColor = '#b33'
+            ctx.beginPath()
+            ctx.arc(cx, cy, 14, 0, 2 * Math.PI)
+            ctx.fill()
+            ctx.shadowBlur = 0
+            ctx.fillStyle = '#b33a3a'
+            ctx.beginPath()
+            ctx.arc(cx - 4, cy - 4, 5, 0, 2 * Math.PI)
+            ctx.fill()
+            ctx.fillStyle = '#f0f0f0'
+            ctx.beginPath()
+            ctx.arc(cx - 3, cy - 5, 2, 0, 2 * Math.PI)
+            ctx.fill()
+          }
+
+          // player
+          if (player.alive) {
+            const cx = player.x * CELL_SIZE + CELL_SIZE / 2
+            const cy = player.y * CELL_SIZE + CELL_SIZE / 2
+            ctx.shadowBlur = 16
+            ctx.shadowColor = '#5faaff'
+            ctx.fillStyle = '#4c9aff'
+            ctx.beginPath()
+            ctx.arc(cx, cy, 16, 0, 2 * Math.PI)
+            ctx.fill()
+            ctx.shadowBlur = 0
+            ctx.fillStyle = '#2670cc'
+            ctx.beginPath()
+            ctx.arc(cx - 5, cy - 5, 6, 0, 2 * Math.PI)
+            ctx.fill()
+            ctx.fillStyle = '#eef5ff'
+            ctx.beginPath()
+            ctx.arc(cx - 4, cy - 6, 2.5, 0, 2 * Math.PI)
+            ctx.fill()
+            // cannon indicator
+            ctx.strokeStyle = '#f5f9ff'
+            ctx.lineWidth = 3
+            ctx.beginPath()
+            const dirOff = [
+              [0, -12],
+              [12, 0],
+              [0, 12],
+              [-12, 0],
+            ]
+            ctx.moveTo(cx, cy)
+            ctx.lineTo(cx + dirOff[player.dir][0], cy + dirOff[player.dir][1])
+            ctx.stroke()
+          }
+
+          // bullets
+          for (let b of bullets) {
+            if (!b.alive) continue
+            ctx.fillStyle = b.isPlayer ? '#f5e56b' : '#ff7b7b'
+            ctx.shadowBlur = 12
+            ctx.shadowColor = b.isPlayer ? '#f5b81b' : '#ff4f4f'
+            ctx.beginPath()
+            ctx.arc(b.x * CELL_SIZE, b.y * CELL_SIZE, 5, 0, 2 * Math.PI)
+            ctx.fill()
+            ctx.shadowBlur = 0
+          }
+
+          // game over overlay
+          if (gameOver) {
+            ctx.fillStyle = 'rgba(0,0,0,0.55)'
+            ctx.fillRect(0, 0, 520, 520)
+            ctx.fillStyle = '#f0d8b0'
+            ctx.font = 'bold 32px system-ui, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.shadowBlur = 20
+            ctx.shadowColor = '#000'
+            ctx.fillText('💥 GAME OVER', 260, 240)
+            ctx.shadowBlur = 0
+          }
+
+          // enemy count
+          ctx.fillStyle = '#d4e4ff'
+          ctx.font = 'bold 14px monospace'
+          ctx.textAlign = 'right'
+          ctx.fillText('👾 ' + enemies.filter((e) => e.alive).length, 500, 30)
+        }
+
+        function updateScore() {
+          scoreSpan.textContent = score
+        }
+
+        // ---------- game loop ----------
+        function loop() {
+          update()
+          render()
+          requestAnimationFrame(loop)
+        }
+
+        // ---------- event listeners ----------
+        function handleKeyDown(e) {
+          const key = e.key
+          if (key in keys) {
+            e.preventDefault()
+            keys[key] = true
+          }
+          if (key === ' ') {
+            e.preventDefault()
+            keys.space = true
+          }
+        }
+        function handleKeyUp(e) {
+          const key = e.key
+          if (key in keys) {
+            e.preventDefault()
+            keys[key] = false
+          }
+          if (key === ' ') {
+            e.preventDefault()
+            keys.space = false
+          }
+        }
+
+        // touch handling
+        function handleTouchStart(e) {
+          e.preventDefault()
+          const rect = canvas.getBoundingClientRect()
+          const touch = e.touches[0]
+          if (!touch) return
+          const x = (touch.clientX - rect.left) / rect.width
+          const y = (touch.clientY - rect.top) / rect.height
+          touchX = Math.min(Math.max(x, 0), 1)
+          touchY = Math.min(Math.max(y, 0), 1)
+          touchActive = true
+        }
+        function handleTouchMove(e) {
+          e.preventDefault()
+          const rect = canvas.getBoundingClientRect()
+          const touch = e.touches[0]
+          if (!touch) {
+            touchActive = false
+            return
+          }
+          const x = (touch.clientX - rect.left) / rect.width
+          const y = (touch.clientY - rect.top) / rect.height
+          touchX = Math.min(Math.max(x, 0), 1)
+          touchY = Math.min(Math.max(y, 0), 1)
+          touchActive = true
+        }
+        function handleTouchEnd(e) {
+          e.preventDefault()
+          touchActive = false
+          touchX = null
+          touchY = null
+        }
+
+        // restart
+        document.getElementById('restartButton').addEventListener('click', () => {
+          initGame()
+          touchActive = false // reset touch
+        })
+        // also restart by tapping gameover? no, button only.
+
+        // register events
+        window.addEventListener('keydown', handleKeyDown)
+        window.addEventListener('keyup', handleKeyUp)
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false })
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false })
+        canvas.addEventListener('touchend', handleTouchEnd, { passive: false })
+        canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false })
+
+        // start
+        initGame()
+        loop()
+      })()
+    </script>
+  </body>
+</html>

@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Retro Tank Battle</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      body {
+        background-color: #111;
+        color: #fff;
+        font-family: 'Courier New', Courier, monospace;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        overflow: hidden;
+        touch-action: none;
+      }
+      #game-container {
+        position: relative;
+        width: 100%;
+        max-width: 600px;
+        aspect-ratio: 1;
+        background: #000;
+        border: 4px solid #555;
+      }
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        image-rendering: pixelated;
+      }
+      #ui-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 10;
+      }
+      .btn {
+        background: #e74c3c;
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        font-size: 20px;
+        font-family: inherit;
+        font-weight: bold;
+        cursor: pointer;
+        margin-top: 20px;
+        box-shadow: 0 4px 0 #c0392b;
+      }
+      .btn:active {
+        transform: translateY(4px);
+        box-shadow: none;
+      }
+      /* Mobile Controls */
+      #mobile-controls {
+        display: none;
+        width: 100%;
+        max-width: 600px;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        position: absolute;
+        bottom: 10px;
+        z-index: 5;
+      }
+      .joystick-container {
+        width: 120px;
+        height: 120px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        position: relative;
+        touch-action: none;
+      }
+      #joystick-knob {
+        width: 50px;
+        height: 50px;
+        background: rgba(231, 76, 60, 0.8);
+        border-radius: 50%;
+        position: absolute;
+        top: 35px;
+        left: 35px;
+        touch-action: none;
+      }
+      #fire-btn {
+        width: 80px;
+        height: 80px;
+        background: #e74c3c;
+        border: 4px solid #fff;
+        border-radius: 50%;
+        color: white;
+        font-weight: bold;
+        font-size: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 0 #95a5a6;
+        touch-action: none;
+      }
+      #fire-btn:active {
+        background: #c0392b;
+        transform: scale(0.95);
+      }
+      #score-board {
+        position: absolute;
+        top: -30px;
+        left: 0;
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        font-size: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-container">
+      <div id="score-board">
+        <span id="score-txt">SCORE: 00000</span>
+        <span id="lives-txt">LIVES: 3</span>
+      </div>
+      <canvas id="gameCanvas" width="416" height="416"></canvas>
+
+      <div id="ui-overlay">
+        <h1 id="menu-title" style="color: #f1c40f; font-size: 36px; text-shadow: 2px 2px #000">BATTLE TANK</h1>
+        <p id="menu-sub" style="margin-top: 10px; text-align: center; color: #aaa; padding: 0 20px">
+          Defend your base! Destroy all enemy tanks.
+        </p>
+        <button id="start-btn" class="btn">START GAME</button>
+      </div>
+    </div>
+
+    <div id="mobile-controls">
+      <div class="joystick-container" id="joystick">
+        <div id="joystick-knob"></div>
+      </div>
+      <div id="fire-btn">FIRE</div>
+    </div>
+
+    <script>
+      const canvas = document.getElementById('gameCanvas')
+      const ctx = canvas.getContext('2d')
+
+      // UI Elements
+      const uiOverlay = document.getElementById('ui-overlay')
+      const startBtn = document.getElementById('start-btn')
+      const menuTitle = document.getElementById('menu-title')
+      const menuSub = document.getElementById('menu-sub')
+      const scoreTxt = document.getElementById('score-txt')
+      const livesTxt = document.getElementById('lives-txt')
+      const mobileControls = document.getElementById('mobile-controls')
+
+      // Grid details (13x13 grid like Battle City, 32x32 pixels per tile = 416x416 canvas)
+      const TILE_SIZE = 32
+      const MAP_GRID = 13
+
+      // Game Variables
+      let gameState = 'MENU' // MENU, PLAYING, GAMEOVER, VICTORY
+      let score = 0
+      let lives = 3
+      let player
+      let bullets = []
+      let enemies = []
+      let particles = []
+      let map = []
+      let enemySpawnTimer = 0
+      let totalEnemiesSpawned = 0
+      const MAX_ENEMIES_TOTAL = 15
+      const MAX_ON_SCREEN_ENEMIES = 4
+
+      // Directions
+      const DIR = { UP: 0, RIGHT: 1, DOWN: 2, LEFT: 3 }
+
+      // Map Tile Types
+      const TILE = { EMPTY: 0, BRICK: 1, STEEL: 2, BASE: 3, RUINED_BASE: 4 }
+
+      // Keyboard Input State
+      const keys = {}
+
+      // Base Level Layout (13x13 grid)
+      const originalMapLayout = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+        [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+        [0, 1, 0, 1, 0, 2, 0, 2, 0, 1, 0, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 2, 0, 1, 1, 0, 0, 0, 1, 1, 0, 2, 0],
+        [0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+        [0, 2, 0, 1, 1, 1, 0, 1, 1, 1, 0, 2, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0],
+        [0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0],
+        [0, 1, 0, 0, 0, 1, 3, 1, 0, 0, 0, 1, 0],
+        [0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0],
+      ]
+
+      // Detect Touch Screen
+      if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        mobileControls.style.display = 'flex'
+        // Shift game container up slightly to make room for controllers on mobile
+        document.getElementById('game-container').style.transform = 'translateY(-40px)'
+      }
+
+      // --- classes ---
+      class Tank {
+        constructor(x, y, isPlayer) {
+          this.x = x
+          this.y = y
+          this.w = 26
+          this.h = 26
+          this.speed = isPlayer ? 2 : 1
+          this.dir = DIR.UP
+          this.isPlayer = isPlayer
+          this.cooldown = 0
+          this.color = isPlayer ? '#2ecc71' : '#f39c12'
+        }
+
+        draw() {
+          ctx.fillStyle = this.color
+          ctx.save()
+          ctx.translate(this.x + this.w / 2, this.y + this.h / 2)
+          ctx.rotate((this.dir * 90 * Math.PI) / 180)
+
+          // Tank Body
+          ctx.fillRect(-this.w / 2 + 4, -this.h / 2 + 4, this.w - 8, this.h - 8)
+          // Left Treads
+          ctx.fillStyle = '#333'
+          ctx.fillRect(-this.w / 2, -this.h / 2, 4, this.h)
+          // Right Treads
+          ctx.fillRect(this.w / 2 - 4, -this.h / 2, 4, this.h)
+          // Turret & Barrel
+          ctx.fillStyle = this.color
+          ctx.fillRect(-4, -4, 8, 8)
+          ctx.fillRect(-2, -this.h / 2, 4, this.h / 2)
+
+          ctx.restore()
+        }
+
+        move(direction) {
+          this.dir = direction
+          let nextX = this.x
+          let nextY = this.y
+
+          if (direction === DIR.UP) nextY -= this.speed
+          if (direction === DIR.DOWN) nextY += this.speed
+          if (direction === DIR.LEFT) nextX -= this.speed
+          if (direction === DIR.RIGHT) nextX += this.speed
+
+          if (!this.checkCollision(nextX, nextY)) {
+            this.x = nextX
+            this.y = nextY
+          }
+        }
+
+        shoot() {
+          if (this.cooldown > 0) return
+
+          let bx = this.x + this.w / 2
+          let by = this.y + this.h / 2
+
+          bullets.push(new Bullet(bx, by, this.dir, this.isPlayer))
+          this.cooldown = this.isPlayer ? 30 : 60 // shoot rate pacing
+        }
+
+        checkCollision(nx, ny) {
+          // Screen boundaries
+          if (nx < 0 || nx + this.w > canvas.width || ny < 0 || ny + this.h > canvas.height) return true
+
+          // Map tiles collision
+          for (let r = 0; r < MAP_GRID; r++) {
+            for (let c = 0; c < MAP_GRID; c++) {
+              if (map[r][c] !== TILE.EMPTY) {
+                let tx = c * TILE_SIZE
+                let ty = r * TILE_SIZE
+                if (nx < tx + TILE_SIZE && nx + this.w > tx && ny < ty + TILE_SIZE && ny + this.h > ty) {
+                  return true
+                }
+              }
+            }
+          }
+
+          // Tank-to-Tank collision
+          if (this.isPlayer) {
+            for (let e of enemies) {
+              if (nx < e.x + e.w && nx + this.w > e.x && ny < e.y + e.h && ny + this.h > e.y) return true
+            }
+          } else {
+            if (
+              nx < player.x + player.w &&
+              nx + this.w > player.x &&
+              ny < player.y + player.h &&
+              ny + this.h > player.y
+            )
+              return true
+            for (let e of enemies) {
+              if (e !== this && nx < e.x + e.w && nx + this.w > e.x && ny < e.y + e.h && ny + this.h > e.y) return true
+            }
+          }
+          return false
+        }
+
+        update() {
+          if (this.cooldown > 0) this.cooldown--
+
+          if (!this.isPlayer) {
+            // Enemy AI - simplistic pathing/random walking
+            if (Math.random() < 0.02 || this.stuck) {
+              this.dir = Math.floor(Math.random() * 4)
+              this.stuck = false
+            }
+
+            let oldX = this.x
+            let oldY = this.y
+            this.move(this.dir)
+
+            if (oldX === this.x && oldY === this.y) {
+              this.stuck = true // Flag to change direction next cycle
+            }
+
+            if (Math.random() < 0.015) {
+              this.shoot()
+            }
+          }
+        }
+      }
+
+      class Bullet {
+        constructor(x, y, dir, isPlayer) {
+          this.x = x
+          this.y = y
+          this.r = 3
+          this.speed = 4
+          this.dir = dir
+          this.isPlayer = isPlayer
+          this.active = true
+        }
+
+        draw() {
+          ctx.fillStyle = this.isPlayer ? '#2ecc71' : '#e74c3c'
+          ctx.beginPath()
+          ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2)
+          ctx.fill()
+        }
+
+        update() {
+          if (this.dir === DIR.UP) this.y -= this.speed
+          if (this.dir === DIR.DOWN) this.y += this.speed
+          if (this.dir === DIR.LEFT) this.x -= this.speed
+          if (this.dir === DIR.RIGHT) this.x += this.speed
+
+          // Wall Collisions
+          if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+            this.active = false
+            return
+          }
+
+          // Map tile collision
+          let c = Math.floor(this.x / TILE_SIZE)
+          let r = Math.floor(this.y / TILE_SIZE)
+
+          if (r >= 0 && r < MAP_GRID && c >= 0 && c < MAP_GRID) {
+            let tile = map[r][c]
+            if (tile === TILE.BRICK) {
+              map[r][c] = TILE.EMPTY // Destroy brick
+              this.active = false
+              spawnExplosion(this.x, this.y, '#e67e22')
+            } else if (tile === TILE.STEEL) {
+              this.active = false // Steel is indestructible
+              spawnExplosion(this.x, this.y, '#95a5a6')
+            } else if (tile === TILE.BASE) {
+              map[r][c] = TILE.RUINED_BASE
+              this.active = false
+              gameOver(false) // Base destroyed, Instant Game Over
+            }
+          }
+
+          // Hit Targets Check
+          if (this.active) {
+            if (this.isPlayer) {
+              for (let e of enemies) {
+                if (this.x > e.x && this.x < e.x + e.w && this.y > e.y && this.y < e.y + e.h) {
+                  e.dead = true
+                  this.active = false
+                  score += 100
+                  scoreTxt.innerText = `SCORE: ${String(score).padStart(5, '0')}`
+                  spawnExplosion(e.x + e.w / 2, e.y + e.h / 2, '#f1c40f', 15)
+                }
+              }
+            } else {
+              if (
+                this.x > player.x &&
+                this.x < player.x + player.w &&
+                this.y > player.y &&
+                this.y < player.y + player.h
+              ) {
+                this.active = false
+                playerHit()
+              }
+            }
+          }
+        }
+      }
+
+      class Particle {
+        constructor(x, y, color) {
+          this.x = x
+          this.y = y
+          this.vx = (Math.random() - 0.5) * 4
+          this.vy = (Math.random() - 0.5) * 4
+          this.color = color
+          this.alpha = 1
+          this.life = 20 + Math.random() * 10
+        }
+        update() {
+          this.x += this.vx
+          this.y += this.vy
+          this.alpha -= 1 / this.life
+        }
+        draw() {
+          ctx.save()
+          ctx.globalAlpha = Math.max(0, this.alpha)
+          ctx.fillStyle = this.color
+          ctx.fillRect(this.x, this.y, 3, 3)
+          ctx.restore()
+        }
+      }
+
+      // --- Helper Functions ---
+      function spawnExplosion(x, y, color, count = 6) {
+        for (let i = 0; i < count; i++) {
+          particles.push(new Particle(x, y, color))
+        }
+      }
+
+      function playerHit() {
+        spawnExplosion(player.x + player.w / 2, player.y + player.h / 2, '#fff', 20)
+        lives--
+        livesTxt.innerText = `LIVES: ${lives}`
+        if (lives <= 0) {
+          gameOver(false)
+        } else {
+          // Reset player position safely
+          player.x = 4 * TILE_SIZE + 4
+          player.y = 12 * TILE_SIZE + 4
+          player.dir = DIR.UP
+        }
+      }
+
+      function spawnEnemy() {
+        if (totalEnemiesSpawned >= MAX_ENEMIES_TOTAL || enemies.length >= MAX_ON_SCREEN_ENEMIES) return
+
+        // 3 classic spawn points along the top edge
+        const spawnPoints = [
+          { x: 0 * TILE_SIZE + 4, y: 0 * TILE_SIZE + 4 },
+          { x: 6 * TILE_SIZE + 4, y: 0 * TILE_SIZE + 4 },
+          { x: 12 * TILE_SIZE + 4, y: 0 * TILE_SIZE + 4 },
+        ]
+
+        let pt = spawnPoints[Math.floor(Math.random() * spawnPoints.length)]
+        enemies.push(new Tank(pt.x, pt.y, false))
+        totalEnemiesSpawned++
+      }
+
+      function drawMap() {
+        for (let r = 0; r < MAP_GRID; r++) {
+          for (let c = 0; c < MAP_GRID; c++) {
+            let tile = map[r][c]
+            if (tile === TILE.EMPTY) continue
+
+            let tx = c * TILE_SIZE
+            let ty = r * TILE_SIZE
+
+            if (tile === TILE.BRICK) {
+              ctx.fillStyle = '#b03a2e'
+              ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE)
+              // Brick patterns
+              ctx.strokeStyle = '#78281f'
+              ctx.lineWidth = 1
+              ctx.strokeRect(tx, ty, TILE_SIZE, TILE_SIZE)
+              ctx.beginPath()
+              ctx.moveTo(tx, ty + TILE_SIZE / 2)
+              ctx.lineTo(tx + TILE_SIZE, ty + TILE_SIZE / 2)
+              ctx.moveTo(tx + TILE_SIZE / 2, ty)
+              ctx.lineTo(tx + TILE_SIZE / 2, ty + TILE_SIZE / 2)
+              ctx.stroke()
+            } else if (tile === TILE.STEEL) {
+              ctx.fillStyle = '#7f8c8d'
+              ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE)
+              ctx.fillStyle = '#bdc3c7'
+              ctx.fillRect(tx + 4, ty + 4, TILE_SIZE - 8, TILE_SIZE - 8)
+            } else if (tile === TILE.BASE) {
+              // Eagle Crest
+              ctx.fillStyle = '#f1c40f'
+              ctx.fillRect(tx + 4, ty + 4, TILE_SIZE - 8, TILE_SIZE - 8)
+              ctx.fillStyle = '#d35400'
+              ctx.fillRect(tx + 10, ty + 10, TILE_SIZE - 20, TILE_SIZE - 20)
+            } else if (tile === TILE.RUINED_BASE) {
+              ctx.fillStyle = '#333'
+              ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE)
+            }
+          }
+        }
+      }
+
+      // --- Input Processing ---
+      window.addEventListener('keydown', (e) => {
+        keys[e.code] = true
+      })
+      window.addEventListener('keyup', (e) => {
+        keys[e.code] = false
+      })
+
+      function handleDesktopInput() {
+        if (keys['ArrowUp'] || keys['KeyW']) player.move(DIR.UP)
+        else if (keys['ArrowDown'] || keys['KeyS']) player.move(DIR.DOWN)
+        else if (keys['ArrowLeft'] || keys['KeyA']) player.move(DIR.LEFT)
+        else if (keys['ArrowRight'] || keys['KeyD']) player.move(DIR.RIGHT)
+
+        if (keys['Space']) player.shoot()
+      }
+
+      // --- Mobile Virtual Controller Setup ---
+      const joystick = document.getElementById('joystick')
+      const knob = document.getElementById('joystick-knob')
+      const fireBtn = document.getElementById('fire-btn')
+      let joystickActive = false
+      let joystickDir = null
+
+      joystick.addEventListener('touchstart', handleJoystickStart, { passive: false })
+      window.addEventListener('touchmove', handleJoystickMove, { passive: false })
+      window.addEventListener('touchend', handleJoystickEnd)
+
+      function handleJoystickStart(e) {
+        joystickActive = true
+        handleJoystickMove(e)
+      }
+
+      function handleJoystickMove(e) {
+        if (!joystickActive) return
+        e.preventDefault()
+
+        let touch = e.touches[0]
+        let rect = joystick.getBoundingClientRect()
+        let centerX = rect.left + rect.width / 2
+        let centerY = rect.top + rect.height / 2
+
+        let dx = touch.clientX - centerX
+        let dy = touch.clientY - centerY
+        let dist = Math.sqrt(dx * dx + dy * dy)
+
+        // Limit knob movement visually
+        let maxDist = rect.width / 2 - 25
+        if (dist > maxDist) {
+          dx = (dx / dist) * maxDist
+          dy = (dy / dist) * maxDist
+        }
+        knob.style.transform = `translate(${dx}px, ${dy}px)`
+
+        // Calculate Direction Angle
+        if (dist > 15) {
+          // Deadzone
+          let angle = (Math.atan2(dy, dx) * 180) / Math.PI
+          if (angle > -45 && angle <= 45) joystickDir = DIR.RIGHT
+          else if (angle > 45 && angle <= 135) joystickDir = DIR.DOWN
+          else if (angle > 135 || angle <= -135) joystickDir = DIR.LEFT
+          else if (angle > -135 && angle <= -45) joystickDir = DIR.UP
+        } else {
+          joystickDir = null
+        }
+      }
+
+      function handleJoystickEnd() {
+        joystickActive = false
+        joystickDir = null
+        knob.style.transform = 'translate(0px, 0px)'
+      }
+
+      fireBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault()
+        if (gameState === 'PLAYING') player.shoot()
+      })
+
+      // --- Core Game Loop ---
+      function initGame() {
+        // Deep clone maps layout
+        map = JSON.parse(JSON.stringify(originalMapLayout))
+        bullets = []
+        enemies = []
+        particles = []
+        score = 0
+        lives = 3
+        totalEnemiesSpawned = 0
+        enemySpawnTimer = 0
+
+        scoreTxt.innerText = 'SCORE: 00000'
+        livesTxt.innerText = 'LIVES: 3'
+
+        // Spawn player at coordinates corresponding to index grid
+        player = new Tank(4 * TILE_SIZE + 4, 12 * TILE_SIZE + 4, true)
+
+        gameState = 'PLAYING'
+        uiOverlay.style.display = 'none'
+      }
+
+      function gameOver(victory) {
+        gameState = victory ? 'VICTORY' : 'GAMEOVER'
+        uiOverlay.style.display = 'flex'
+        if (victory) {
+          menuTitle.innerText = 'VICTORY!'
+          menuTitle.style.color = '#2ecc71'
+          menuSub.innerText = `You eliminated all targets! Final Score: ${score}`
+        } else {
+          menuTitle.innerText = 'GAME OVER'
+          menuTitle.style.color = '#e74c3c'
+          menuSub.innerText = `Your base fell or you lost all lives. Score: ${score}`
+        }
+        startBtn.innerText = 'PLAY AGAIN'
+      }
+
+      function update() {
+        if (gameState !== 'PLAYING') return
+
+        // Inputs
+        if (joystickDir !== null) player.move(joystickDir)
+        else handleDesktopInput()
+
+        player.update()
+
+        // Enemy generation pacing
+        enemySpawnTimer++
+        if (enemySpawnTimer % 120 === 0) {
+          spawnEnemy()
+        }
+
+        // Cycle Updates
+        enemies.forEach((e) => e.update())
+        bullets.forEach((b) => b.update())
+        particles.forEach((p) => p.update())
+
+        // Drop filter conditions
+        enemies = enemies.filter((e) => !e.dead)
+        bullets = bullets.filter((b) => b.active)
+        particles = particles.filter((p) => p.alpha > 0)
+
+        // Win parameters
+        if (totalEnemiesSpawned >= MAX_ENEMIES_TOTAL && enemies.length === 0) {
+          gameOver(true)
+        }
+      }
+
+      function render() {
+        // Clear frame buffer
+        ctx.fillStyle = '#000'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+        drawMap()
+
+        if (gameState === 'PLAYING') {
+          player.draw()
+        }
+
+        enemies.forEach((e) => e.draw())
+        bullets.forEach((b) => b.draw())
+        particles.forEach((p) => p.draw())
+      }
+
+      function loop() {
+        update()
+        render()
+        requestAnimationFrame(loop)
+      }
+
+      startBtn.addEventListener('click', initGame)
+
+      // Fire up background process ticker
+      loop()
+    </script>
+  </body>
+</html>

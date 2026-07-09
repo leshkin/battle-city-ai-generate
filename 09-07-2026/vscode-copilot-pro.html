@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Iron Fortress</title>
+    <style>
+      :root {
+        --bg0: #081426;
+        --bg1: #10243d;
+        --panel: #0d1b2dd9;
+        --line: #5da8ff66;
+        --text: #d8ebff;
+        --accent: #f5c74e;
+        --danger: #ff6e66;
+        --ok: #7be28f;
+        --shadow: #00112666;
+      }
+
+      * {
+        box-sizing: border-box;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        color: var(--text);
+        font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+        background:
+          radial-gradient(1200px 700px at 15% -10%, #1d4e89cc 0%, transparent 55%),
+          radial-gradient(900px 650px at 100% 10%, #003f5f88 0%, transparent 55%),
+          linear-gradient(170deg, var(--bg0), var(--bg1));
+        overflow: hidden;
+      }
+
+      .app {
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 12px;
+        gap: 10px;
+      }
+
+      .frame {
+        width: min(100%, 860px);
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .hud {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        font-weight: 700;
+        font-size: clamp(12px, 2.4vw, 15px);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .hud > div {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 10px;
+        box-shadow: 0 8px 20px var(--shadow);
+      }
+
+      .hud b {
+        color: var(--accent);
+        margin-left: 8px;
+        font-size: 1.1em;
+      }
+
+      .playfield-wrap {
+        position: relative;
+        width: 100%;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #050d17aa;
+        box-shadow: 0 20px 35px var(--shadow);
+        overflow: hidden;
+        isolation: isolate;
+      }
+
+      .playfield-wrap::before {
+        content: '';
+        position: absolute;
+        inset: -20%;
+        z-index: -1;
+        background:
+          radial-gradient(closest-side at 20% 20%, #4fa0ff22, transparent 70%),
+          radial-gradient(closest-side at 80% 80%, #6de9ff1a, transparent 70%);
+        animation: drift 12s linear infinite alternate;
+      }
+
+      @keyframes drift {
+        from {
+          transform: translate(-1.5%, -1%);
+        }
+        to {
+          transform: translate(1.5%, 1%);
+        }
+      }
+
+      canvas {
+        width: min(100%, 640px);
+        height: auto;
+        max-height: calc(100dvh - 180px);
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        display: block;
+        background: #101214;
+      }
+
+      .controls {
+        display: none;
+        width: 100%;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 2px 2px 6px;
+      }
+
+      .dpad {
+        display: grid;
+        grid-template-columns: repeat(3, 64px);
+        grid-template-rows: repeat(3, 64px);
+        gap: 6px;
+        filter: drop-shadow(0 10px 12px var(--shadow));
+      }
+
+      .btn {
+        border: 1px solid #9ec4ff88;
+        background: #0f2340dd;
+        color: #dcecff;
+        border-radius: 12px;
+        font-size: 24px;
+        font-weight: 900;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        min-width: 0;
+        min-height: 0;
+      }
+
+      .btn:active,
+      .btn.active {
+        transform: translateY(1px);
+        background: #1d4f82ee;
+        border-color: #d4e7ff;
+      }
+
+      #fire {
+        width: 116px;
+        height: 116px;
+        border-radius: 999px;
+        background: linear-gradient(145deg, #9d2c2c, #7f1414);
+        border: 2px solid #ffaca5;
+        color: #fff4f4;
+        font-size: 24px;
+        letter-spacing: 0.06em;
+        text-shadow: 0 2px 10px #0008;
+        box-shadow: 0 12px 18px #0008;
+      }
+
+      .help {
+        font-size: 12px;
+        opacity: 0.85;
+        text-align: center;
+        letter-spacing: 0.04em;
+      }
+
+      @media (max-width: 900px), (pointer: coarse) {
+        .controls {
+          display: flex;
+        }
+
+        canvas {
+          max-height: calc(100dvh - 310px);
+        }
+
+        .help {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <section class="frame">
+        <header class="hud">
+          <div>Score <b id="score">0</b></div>
+          <div>Lives <b id="lives">3</b></div>
+          <div>Enemies <b id="left">20</b></div>
+          <div>Status <b id="status">Ready</b></div>
+        </header>
+
+        <div class="playfield-wrap">
+          <canvas id="game" width="416" height="416" aria-label="Battle game" role="img"></canvas>
+        </div>
+
+        <div class="controls" aria-label="Touch controls">
+          <div class="dpad">
+            <div></div>
+            <button class="btn" data-dir="up" aria-label="Move up">▲</button>
+            <div></div>
+            <button class="btn" data-dir="left" aria-label="Move left">◀</button>
+            <div></div>
+            <button class="btn" data-dir="right" aria-label="Move right">▶</button>
+            <div></div>
+            <button class="btn" data-dir="down" aria-label="Move down">▼</button>
+            <div></div>
+          </div>
+          <button class="btn" id="fire" aria-label="Fire">FIRE</button>
+        </div>
+
+        <p class="help">Desktop: Arrow keys or WASD to move, Space to fire. Protect your base.</p>
+      </section>
+    </main>
+
+    <script>
+      ;(() => {
+        'use strict'
+
+        const TILE = 32
+        const COLS = 13
+        const ROWS = 13
+        const WIDTH = COLS * TILE
+        const HEIGHT = ROWS * TILE
+
+        const DIRS = {
+          up: { x: 0, y: -1, angle: -Math.PI / 2 },
+          down: { x: 0, y: 1, angle: Math.PI / 2 },
+          left: { x: -1, y: 0, angle: Math.PI },
+          right: { x: 1, y: 0, angle: 0 },
+        }
+        const DIR_LIST = ['up', 'right', 'down', 'left']
+
+        const mapRows = [
+          '.B....#....B.',
+          '...~~...~~...',
+          'B..###.###..B',
+          '..T..B.B..T..',
+          '...B.....B...',
+          '##..B...B..##',
+          '...~~~.~~~...',
+          '..B..###..B..',
+          '.T..B...B..T.',
+          '...###.###...',
+          '.B.........B.',
+          '...BBB.BBB...',
+          '.....BBHBB...',
+        ]
+
+        const map = mapRows.map((r) => r.split(''))
+        const treeLayer = []
+        for (let y = 0; y < ROWS; y++) {
+          for (let x = 0; x < COLS; x++) {
+            if (map[y][x] === 'T') {
+              treeLayer.push({ x, y })
+              map[y][x] = '.'
+            }
+          }
+        }
+
+        const canvas = document.getElementById('game')
+        const ctx = canvas.getContext('2d')
+        const scoreEl = document.getElementById('score')
+        const livesEl = document.getElementById('lives')
+        const leftEl = document.getElementById('left')
+        const statusEl = document.getElementById('status')
+
+        const state = {
+          running: true,
+          win: false,
+          lose: false,
+          baseDestroyed: false,
+          score: 0,
+          lives: 3,
+          maxEnemies: 20,
+          spawned: 0,
+          activeCap: 5,
+          spawnCooldown: 1.2,
+          spawnTimer: 0,
+          flashT: 0,
+        }
+
+        const keys = {
+          up: false,
+          down: false,
+          left: false,
+          right: false,
+          fire: false,
+        }
+
+        const touchState = {
+          up: false,
+          down: false,
+          left: false,
+          right: false,
+          fire: false,
+        }
+
+        const bullets = []
+        const enemies = []
+
+        const player = {
+          x: TILE * 6.5,
+          y: TILE * 11.5,
+          w: 26,
+          h: 26,
+          speed: 118,
+          dir: 'up',
+          reload: 0,
+          invul: 2.2,
+          alive: true,
+          blink: 0,
+        }
+
+        function clamp(v, a, b) {
+          return Math.max(a, Math.min(b, v))
+        }
+
+        function rand(arr) {
+          return arr[(Math.random() * arr.length) | 0]
+        }
+
+        function worldToTile(px, py) {
+          return {
+            x: clamp((px / TILE) | 0, 0, COLS - 1),
+            y: clamp((py / TILE) | 0, 0, ROWS - 1),
+          }
+        }
+
+        function tileAt(tx, ty) {
+          if (tx < 0 || tx >= COLS || ty < 0 || ty >= ROWS) return '#'
+          return map[ty][tx]
+        }
+
+        function setTile(tx, ty, value) {
+          if (tx < 0 || tx >= COLS || ty < 0 || ty >= ROWS) return
+          map[ty][tx] = value
+        }
+
+        function solidForTank(t) {
+          return t === '#' || t === 'B' || t === '~' || t === 'H'
+        }
+
+        function rectHitsSolid(x, y, w, h) {
+          const left = x - w / 2
+          const right = x + w / 2
+          const top = y - h / 2
+          const bottom = y + h / 2
+
+          const minTileX = clamp((left / TILE) | 0, 0, COLS - 1)
+          const maxTileX = clamp((right / TILE) | 0, 0, COLS - 1)
+          const minTileY = clamp((top / TILE) | 0, 0, ROWS - 1)
+          const maxTileY = clamp((bottom / TILE) | 0, 0, ROWS - 1)
+
+          for (let ty = minTileY; ty <= maxTileY; ty++) {
+            for (let tx = minTileX; tx <= maxTileX; tx++) {
+              if (solidForTank(tileAt(tx, ty))) return true
+            }
+          }
+          return false
+        }
+
+        function overlapRect(a, b) {
+          return Math.abs(a.x - b.x) * 2 < a.w + b.w && Math.abs(a.y - b.y) * 2 < a.h + b.h
+        }
+
+        function canTankBeAt(tank, nx, ny) {
+          const hw = tank.w / 2
+          const hh = tank.h / 2
+          if (nx - hw < 0 || nx + hw > WIDTH || ny - hh < 0 || ny + hh > HEIGHT) {
+            return false
+          }
+
+          if (rectHitsSolid(nx, ny, tank.w, tank.h)) return false
+
+          const others = tank.team === 'player' ? enemies : [player, ...enemies.filter((e) => e !== tank)]
+          for (const other of others) {
+            if (!other.alive) continue
+            if (
+              Math.abs(other.x - nx) * 2 < other.w + tank.w - 4 &&
+              Math.abs(other.y - ny) * 2 < other.h + tank.h - 4
+            ) {
+              return false
+            }
+          }
+          return true
+        }
+
+        function spawnEnemy() {
+          if (state.spawned >= state.maxEnemies) return
+          if (enemies.filter((e) => e.alive).length >= state.activeCap) return
+
+          const spawnCols = [1.5, 6.5, 11.5]
+          const tries = [0, 1, 2, 3, 4]
+          for (const _ of tries) {
+            const col = rand(spawnCols)
+            const enemy = {
+              team: 'enemy',
+              x: col * TILE,
+              y: TILE * 0.8,
+              w: 26,
+              h: 26,
+              speed: 72 + Math.random() * 12,
+              dir: rand(DIR_LIST),
+              reload: 0.3 + Math.random() * 0.6,
+              alive: true,
+              aiTurn: 0.35 + Math.random() * 0.9,
+              aiShoot: 0.5 + Math.random() * 1.3,
+            }
+            if (canTankBeAt(enemy, enemy.x, enemy.y)) {
+              enemies.push(enemy)
+              state.spawned++
+              return
+            }
+          }
+        }
+
+        function fireFrom(tank) {
+          if (!tank.alive || tank.reload > 0) return
+          const dir = DIRS[tank.dir]
+          const speed = 240
+          bullets.push({
+            x: tank.x + dir.x * (tank.w * 0.5 + 5),
+            y: tank.y + dir.y * (tank.h * 0.5 + 5),
+            vx: dir.x * speed,
+            vy: dir.y * speed,
+            r: 3,
+            owner: tank.team,
+            alive: true,
+          })
+          tank.reload = tank.team === 'player' ? 0.26 : 0.9 + Math.random() * 0.6
+        }
+
+        function killEnemy(e) {
+          e.alive = false
+          state.score += 100
+        }
+
+        function killPlayer() {
+          if (!player.alive || player.invul > 0) return
+          state.lives--
+          if (state.lives <= 0) {
+            state.lose = true
+            state.running = false
+            return
+          }
+          player.alive = true
+          player.x = TILE * 6.5
+          player.y = TILE * 11.5
+          player.dir = 'up'
+          player.invul = 2.2
+        }
+
+        function updatePlayer(dt) {
+          if (!player.alive || !state.running) return
+
+          player.reload = Math.max(0, player.reload - dt)
+          player.invul = Math.max(0, player.invul - dt)
+          player.blink += dt * 18
+
+          let dir = null
+          if (keys.up || touchState.up) dir = 'up'
+          else if (keys.down || touchState.down) dir = 'down'
+          else if (keys.left || touchState.left) dir = 'left'
+          else if (keys.right || touchState.right) dir = 'right'
+
+          if (dir) {
+            player.dir = dir
+            const v = DIRS[dir]
+            const nx = player.x + v.x * player.speed * dt
+            const ny = player.y + v.y * player.speed * dt
+            if (canTankBeAt(player, nx, ny)) {
+              player.x = nx
+              player.y = ny
+            }
+          }
+
+          if (keys.fire || touchState.fire) fireFrom(player)
+        }
+
+        function pickEnemyDir(enemy) {
+          if (Math.random() < 0.6) {
+            const dx = player.x - enemy.x
+            const dy = player.y - enemy.y
+            if (Math.abs(dx) > Math.abs(dy)) {
+              return dx < 0 ? 'left' : 'right'
+            }
+            return dy < 0 ? 'up' : 'down'
+          }
+          return rand(DIR_LIST)
+        }
+
+        function updateEnemies(dt) {
+          for (const e of enemies) {
+            if (!e.alive) continue
+
+            e.reload = Math.max(0, e.reload - dt)
+            e.aiTurn -= dt
+            e.aiShoot -= dt
+
+            if (e.aiTurn <= 0) {
+              e.dir = pickEnemyDir(e)
+              e.aiTurn = 0.35 + Math.random() * 0.9
+            }
+
+            const v = DIRS[e.dir]
+            const nx = e.x + v.x * e.speed * dt
+            const ny = e.y + v.y * e.speed * dt
+            if (canTankBeAt(e, nx, ny)) {
+              e.x = nx
+              e.y = ny
+            } else {
+              e.dir = pickEnemyDir(e)
+              e.aiTurn = 0.2 + Math.random() * 0.6
+            }
+
+            if (e.aiShoot <= 0) {
+              if (Math.random() < 0.55) fireFrom(e)
+              e.aiShoot = 0.4 + Math.random() * 1.2
+            }
+          }
+        }
+
+        function updateBullets(dt) {
+          for (const b of bullets) {
+            if (!b.alive) continue
+            b.x += b.vx * dt
+            b.y += b.vy * dt
+
+            if (b.x < 0 || b.x > WIDTH || b.y < 0 || b.y > HEIGHT) {
+              b.alive = false
+              continue
+            }
+
+            const t = worldToTile(b.x, b.y)
+            const tile = tileAt(t.x, t.y)
+            if (tile === 'B') {
+              setTile(t.x, t.y, '.')
+              b.alive = false
+              continue
+            }
+            if (tile === '#') {
+              b.alive = false
+              continue
+            }
+            if (tile === 'H') {
+              setTile(t.x, t.y, '.')
+              b.alive = false
+              state.baseDestroyed = true
+              state.lose = true
+              state.running = false
+              continue
+            }
+
+            if (b.owner === 'player') {
+              for (const e of enemies) {
+                if (!e.alive) continue
+                if (Math.abs(e.x - b.x) < e.w / 2 && Math.abs(e.y - b.y) < e.h / 2) {
+                  b.alive = false
+                  killEnemy(e)
+                  break
+                }
+              }
+            } else {
+              if (player.alive && Math.abs(player.x - b.x) < player.w / 2 && Math.abs(player.y - b.y) < player.h / 2) {
+                b.alive = false
+                killPlayer()
+              }
+            }
+          }
+
+          for (let i = 0; i < bullets.length; i++) {
+            const a = bullets[i]
+            if (!a.alive) continue
+            for (let j = i + 1; j < bullets.length; j++) {
+              const b = bullets[j]
+              if (!b.alive || a.owner === b.owner) continue
+              const dx = a.x - b.x
+              const dy = a.y - b.y
+              if (dx * dx + dy * dy < 36) {
+                a.alive = false
+                b.alive = false
+                break
+              }
+            }
+          }
+
+          let w = 0
+          for (let i = 0; i < bullets.length; i++) {
+            if (bullets[i].alive) bullets[w++] = bullets[i]
+          }
+          bullets.length = w
+        }
+
+        function updateSpawning(dt) {
+          if (!state.running) return
+          state.spawnTimer -= dt
+          if (state.spawnTimer <= 0) {
+            spawnEnemy()
+            state.spawnTimer = state.spawnCooldown
+          }
+
+          const aliveCount = enemies.filter((e) => e.alive).length
+          if (state.spawned >= state.maxEnemies && aliveCount === 0 && !state.lose) {
+            state.win = true
+            state.running = false
+          }
+        }
+
+        function drawMap(t) {
+          ctx.fillStyle = '#191d1f'
+          ctx.fillRect(0, 0, WIDTH, HEIGHT)
+
+          for (let y = 0; y < ROWS; y++) {
+            for (let x = 0; x < COLS; x++) {
+              const tile = tileAt(x, y)
+              const px = x * TILE
+              const py = y * TILE
+
+              if (tile === 'B') {
+                ctx.fillStyle = '#9f5526'
+                ctx.fillRect(px + 3, py + 3, TILE - 6, TILE - 6)
+                ctx.fillStyle = '#c5793f'
+                ctx.fillRect(px + 5, py + 5, TILE - 14, TILE / 2 - 3)
+                ctx.fillRect(px + TILE / 2 + 1, py + TILE / 2, TILE / 2 - 6, TILE / 2 - 6)
+              } else if (tile === '#') {
+                ctx.fillStyle = '#8b9db4'
+                ctx.fillRect(px + 4, py + 4, TILE - 8, TILE - 8)
+                ctx.fillStyle = '#607488'
+                ctx.fillRect(px + 6, py + 6, TILE - 16, TILE - 16)
+              } else if (tile === '~') {
+                const wave = (Math.sin((t + x * 97 + y * 53) * 0.005) + 1) * 0.5
+                ctx.fillStyle = '#174b75'
+                ctx.fillRect(px, py, TILE, TILE)
+                ctx.fillStyle = `rgba(121, 208, 255, ${0.25 + wave * 0.3})`
+                for (let i = 0; i < 4; i++) {
+                  ctx.fillRect(px + 2, py + 5 + i * 7, TILE - 4, 2)
+                }
+              } else if (tile === 'H') {
+                drawBase(px, py)
+              }
+            }
+          }
+        }
+
+        function drawBase(px, py) {
+          const pulse = state.baseDestroyed ? 0.3 : 0.95
+          ctx.fillStyle = `rgba(230, 205, 75, ${pulse})`
+          ctx.fillRect(px + 6, py + 6, TILE - 12, TILE - 12)
+          ctx.fillStyle = '#3d2e16'
+          ctx.fillRect(px + 10, py + 11, TILE - 20, TILE - 10)
+          ctx.fillStyle = '#efdf9a'
+          ctx.fillRect(px + 12, py + 12, TILE - 24, 4)
+        }
+
+        function drawTank(tank, body, turret, shieldAlpha = 0) {
+          if (!tank.alive) return
+
+          ctx.save()
+          ctx.translate(tank.x, tank.y)
+          ctx.rotate(DIRS[tank.dir].angle)
+
+          ctx.fillStyle = body
+          ctx.fillRect(-tank.w / 2, -tank.h / 2, tank.w, tank.h)
+
+          ctx.fillStyle = turret
+          ctx.fillRect(-4, -5, 15, 10)
+          ctx.fillRect(-tank.w / 2 + 3, -tank.h / 2 + 3, tank.w - 6, 4)
+          ctx.fillRect(-tank.w / 2 + 3, tank.h / 2 - 7, tank.w - 6, 4)
+
+          ctx.restore()
+
+          if (shieldAlpha > 0) {
+            ctx.strokeStyle = `rgba(116, 223, 255, ${shieldAlpha})`
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.arc(tank.x, tank.y, tank.w * 0.68, 0, Math.PI * 2)
+            ctx.stroke()
+          }
+        }
+
+        function drawBullets() {
+          for (const b of bullets) {
+            ctx.fillStyle = b.owner === 'player' ? '#ffe17e' : '#ff8f8f'
+            ctx.beginPath()
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2)
+            ctx.fill()
+          }
+        }
+
+        function drawTrees() {
+          for (const tr of treeLayer) {
+            const px = tr.x * TILE
+            const py = tr.y * TILE
+            ctx.fillStyle = '#2f7e3b'
+            ctx.fillRect(px + 4, py + 4, TILE - 8, TILE - 8)
+            ctx.fillStyle = '#50ab62'
+            ctx.fillRect(px + 8, py + 6, TILE - 16, 6)
+          }
+        }
+
+        function drawOverlay() {
+          if (state.running) return
+
+          ctx.fillStyle = 'rgba(0,0,0,0.45)'
+          ctx.fillRect(0, 0, WIDTH, HEIGHT)
+
+          ctx.textAlign = 'center'
+          ctx.fillStyle = state.win ? '#9afcb0' : '#ffc1bc'
+          ctx.font = '900 34px Trebuchet MS'
+          ctx.fillText(state.win ? 'YOU WIN' : 'GAME OVER', WIDTH / 2, HEIGHT / 2 - 8)
+
+          ctx.fillStyle = '#d7ecff'
+          ctx.font = '700 14px Trebuchet MS'
+          ctx.fillText('Tap or press Enter to restart', WIDTH / 2, HEIGHT / 2 + 22)
+        }
+
+        function updateHUD() {
+          scoreEl.textContent = String(state.score)
+          livesEl.textContent = String(Math.max(0, state.lives))
+          const aliveEnemies = enemies.filter((e) => e.alive).length
+          const remaining = state.maxEnemies - state.spawned + aliveEnemies
+          leftEl.textContent = String(Math.max(0, remaining))
+
+          if (state.win) statusEl.textContent = 'Victory'
+          else if (state.lose) statusEl.textContent = state.baseDestroyed ? 'Base Lost' : 'Defeat'
+          else statusEl.textContent = 'Combat'
+        }
+
+        function resetGame() {
+          for (let y = 0; y < ROWS; y++) {
+            for (let x = 0; x < COLS; x++) {
+              const src = mapRows[y][x]
+              map[y][x] = src === 'T' ? '.' : src
+            }
+          }
+
+          bullets.length = 0
+          enemies.length = 0
+
+          state.running = true
+          state.win = false
+          state.lose = false
+          state.baseDestroyed = false
+          state.score = 0
+          state.lives = 3
+          state.spawned = 0
+          state.spawnTimer = 0.2
+
+          player.x = TILE * 6.5
+          player.y = TILE * 11.5
+          player.dir = 'up'
+          player.reload = 0
+          player.invul = 2.2
+          player.alive = true
+        }
+
+        function update(dt, now) {
+          state.flashT += dt
+          if (!state.running) return
+
+          updateSpawning(dt)
+          updatePlayer(dt)
+          updateEnemies(dt)
+          updateBullets(dt)
+
+          if (state.baseDestroyed) {
+            state.lose = true
+            state.running = false
+          }
+        }
+
+        function render(now) {
+          drawMap(now)
+
+          drawTank(player, '#4dc56a', '#c9ffd6', player.invul > 0 && (player.blink | 0) % 2 === 0 ? 0.8 : 0)
+
+          for (const e of enemies) {
+            if (!e.alive) continue
+            drawTank(e, '#d54f47', '#ffd2ce')
+          }
+
+          drawBullets()
+          drawTrees()
+          drawOverlay()
+          updateHUD()
+        }
+
+        let last = performance.now()
+        function frame(now) {
+          const dt = Math.min(0.033, (now - last) / 1000)
+          last = now
+          update(dt, now)
+          render(now)
+          requestAnimationFrame(frame)
+        }
+
+        function setKey(e, down) {
+          const k = e.key.toLowerCase()
+          if (k === 'arrowup' || k === 'w') keys.up = down
+          if (k === 'arrowdown' || k === 's') keys.down = down
+          if (k === 'arrowleft' || k === 'a') keys.left = down
+          if (k === 'arrowright' || k === 'd') keys.right = down
+          if (k === ' ' || k === 'spacebar') keys.fire = down
+          if (!state.running && down && (k === 'enter' || k === ' ')) resetGame()
+        }
+
+        window.addEventListener(
+          'keydown',
+          (e) => {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+              e.preventDefault()
+            }
+            setKey(e, true)
+          },
+          { passive: false },
+        )
+
+        window.addEventListener('keyup', (e) => setKey(e, false))
+
+        function bindHoldButton(el, onStart, onEnd) {
+          const activePointers = new Set()
+
+          const start = (ev) => {
+            ev.preventDefault()
+            if (typeof ev.pointerId === 'number' && el.setPointerCapture) {
+              try {
+                el.setPointerCapture(ev.pointerId)
+              } catch (_) {}
+            }
+            el.classList.add('active')
+            activePointers.add(ev.pointerId || 1)
+            onStart()
+          }
+
+          const end = (ev) => {
+            ev.preventDefault()
+            activePointers.delete(ev.pointerId || 1)
+            if (activePointers.size === 0) {
+              el.classList.remove('active')
+              onEnd()
+            }
+          }
+
+          el.addEventListener('pointerdown', start, { passive: false })
+          el.addEventListener('pointerup', end, { passive: false })
+          el.addEventListener('pointercancel', end, { passive: false })
+          el.addEventListener('lostpointercapture', end, { passive: false })
+        }
+
+        const dpadButtons = document.querySelectorAll('[data-dir]')
+        for (const btn of dpadButtons) {
+          const dir = btn.getAttribute('data-dir')
+          bindHoldButton(
+            btn,
+            () => {
+              touchState[dir] = true
+            },
+            () => {
+              touchState[dir] = false
+            },
+          )
+        }
+
+        const fireBtn = document.getElementById('fire')
+        bindHoldButton(
+          fireBtn,
+          () => {
+            touchState.fire = true
+            if (!state.running) resetGame()
+          },
+          () => {
+            touchState.fire = false
+          },
+        )
+
+        canvas.addEventListener('pointerdown', () => {
+          if (!state.running) resetGame()
+        })
+
+        resetGame()
+        requestAnimationFrame(frame)
+      })()
+    </script>
+  </body>
+</html>

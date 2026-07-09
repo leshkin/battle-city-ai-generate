@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Battle City Clone</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #222;
+      color: white;
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #game-container {
+      position: relative;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+    }
+    #ui {
+      margin-top: 10px;
+      text-align: center;
+      pointer-events: none;
+    }
+    .controls-hint {
+      margin-top: 8px;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+    @media (max-width: 600px) {
+      .controls-hint { display: none; }
+      #touch-controls {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        padding: 10px;
+        pointer-events: auto;
+      }
+      .d-pad, .shoot-btn {
+        background: rgba(255,255,255,0.2);
+        border: 2px solid white;
+        color: white;
+        font-weight: bold;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .d-pad { width: 60px; height: 60px; border-radius: 8px; }
+      .shoot-btn { width: 70px; height: 70px; border-radius: 50%; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div id="touch-controls" style="display:none;">
+      <div class="d-pad" id="up">↑</div>
+      <div style="display:flex; flex-direction:column; align-items:center;">
+        <div class="d-pad" id="left">←</div>
+        <div class="d-pad" id="right">→</div>
+      </div>
+      <div class="d-pad" id="down">↓</div>
+      <button class="shoot-btn" id="shoot">SHOOT</button>
+    </div>
+  </div>
+
+  <div id="ui">
+    <h2 id="score-display">Score: 0</h2>
+    <p id="lives-display">Lives: 3</p>
+    <div class="controls-hint">
+      Desktop: WASD / Arrow keys to move, Space / F to shoot<br/>
+      Mobile: Use on-screen controls
+    </div>
+  </div>
+
+<script>
+/**
+ * Battle City Clone - Single file, no dependencies, desktop & mobile
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score-display');
+const livesEl = document.getElementById('lives-display');
+
+// Responsive canvas
+function resize() {
+  const baseSize = Math.min(window.innerWidth, window.innerHeight) * 0.9;
+  const tileSize = 24;
+  const cols = Math.floor(baseSize / tileSize);
+  const rows = Math.floor((baseSize * 0.85) / tileSize); // leave room for UI
+  canvas.width = cols * tileSize;
+  canvas.height = rows * tileSize;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Game constants
+const TILE = 24;
+const COLS = Math.floor(canvas.width / TILE);
+const ROWS = Math.floor(canvas.height / TILE);
+
+const TYPES = {
+  EMPTY: 0,
+  BRICK: 1,
+  STEEL: 2,
+  GRASS: 3,
+  WATER: 4,
+  BASE: 5
+};
+
+// Map (simplified Battle City style)
+const map = [
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,0,0,1,1,1,1,1,1,1,1,1,1,0,0,2],
+  [2,0,0,1,0,0,0,1,1,0,0,0,1,0,0,2],
+  [2,1,1,1,0,1,1,1,1,1,1,0,1,1,1,2],
+  [2,1,0,0,0,1,0,0,0,0,1,0,0,0,1,2],
+  [2,1,0,1,1,1,0,1,1,0,1,1,1,0,1,2],
+  [2,1,0,1,0,0,0,1,1,0,0,0,1,0,1,2],
+  [2,1,0,1,0,5,5,1,1,5,5,0,1,0,1,2],
+  [2,1,0,1,0,5,5,1,1,5,5,0,1,0,1,2],
+  [2,1,0,1,0,0,0,1,1,0,0,0,1,0,1,2],
+  [2,1,0,1,1,1,0,1,1,0,1,1,1,0,1,2],
+  [2,1,0,0,0,1,0,0,0,0,1,0,0,0,1,2],
+  [2,1,1,1,0,1,1,1,1,1,1,0,1,1,1,2],
+  [2,0,0,1,0,0,0,1,1,0,0,0,1,0,0,2],
+  [2,0,0,1,1,1,1,1,1,1,1,1,1,0,0,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]
+];
+
+// Entities
+const player = {
+  x: 7 * TILE,
+  y: 13 * TILE,
+  w: TILE,
+  h: TILE,
+  speed: 3,
+  dir: 'up',
+  alive: true,
+  cooldown: 0
+};
+
+const enemies = [];
+const bullets = [];
+const particles = [];
+
+let score = 0;
+let lives = 3;
+let gameActive = true;
+
+// Controls
+const keys = {};
+const touchState = { up: false, down: false, left: false, right: false, shoot: false };
+
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+});
+window.addEventListener('keyup', e => {
+  keys[e.code] = false;
+});
+
+// Touch controls setup
+['up','down','left','right'].forEach(dir => {
+  document.getElementById(dir).addEventListener('mousedown', () => touchState[dir] = true);
+  document.getElementById(dir).addEventListener('mouseup', () => touchState[dir] = false);
+  document.getElementById(dir).addEventListener('touchstart', (e) => { e.preventDefault(); touchState[dir] = true; });
+  document.getElementById(dir).addEventListener('touchend', (e) => { e.preventDefault(); touchState[dir] = false; });
+});
+document.getElementById('shoot').addEventListener('mousedown', () => touchState.shoot = true);
+document.getElementById('shoot').addEventListener('mouseup', () => touchState.shoot = false);
+document.getElementById('shoot').addEventListener('touchstart', e => { e.preventDefault(); touchState.shoot = true; });
+document.getElementById('shoot').addEventListener('touchend', e => { e.preventDefault(); touchState.shoot = false; });
+
+function spawnEnemy() {
+  if (!gameActive || enemies.length >= 4) return;
+  const side = Math.random() < 0.33 ? 'top' : (Math.random() < 0.5 ? 'left' : 'right');
+  let ex, ey;
+  if (side === 'top') { ex = (Math.floor(Math.random() * 6) + 2) * TILE; ey = -TILE; }
+  else if (side === 'left') { ex = -TILE; ey = (Math.floor(Math.random() * 6) + 2) * TILE; }
+  else { ex = canvas.width; ey = (Math.floor(Math.random() * 6) + 2) * TILE; }
+
+  enemies.push({
+    x: ex,
+    y: ey,
+    w: TILE,
+    h: TILE,
+    speed: 1.5 + Math.random(),
+    dir: 'down', // will be corrected in update
+    alive: true,
+    cooldown: 0
+  });
+}
+
+function createBullet(owner, angle) {
+  bullets.push({
+    x: owner.x + owner.w/2 - 4,
+    y: owner.y + owner.h/2 - 4,
+    w: 8, h: 8,
+    vx: Math.cos(angle) * 6,
+    vy: Math.sin(angle) * 6,
+    owner: owner,
+    ttl: 600, // frames
+    alive: true
+  });
+}
+
+function shoot(entity) {
+  if (entity.cooldown > 0) return;
+  entity.cooldown = 30;
+  let angle = 0;
+  if (entity === player) {
+    if (player.dir === 'up') angle = -Math.PI/2;
+    else if (player.dir === 'down') angle = Math.PI/2;
+    else if (player.dir === 'left') angle = Math.PI;
+    else angle = 0;
+  } else {
+    // simple AI shoot toward player
+    const dx = player.x + player.w/2 - (entity.x + entity.w/2);
+    const dy = player.y + player.h/2 - (entity.y + entity.h/2);
+    angle = Math.atan2(dy, dx);
+  }
+  createBullet(entity, angle);
+}
+
+function update() {
+  if (!gameActive) return;
+
+  // Player movement
+  if (player.alive) {
+    const inputUp = keys['KeyW'] || keys['ArrowUp'] || touchState.up;
+    const inputDown = keys['KeyS'] || keys['ArrowDown'] || touchState.down;
+    const inputLeft = keys['KeyA'] || keys['ArrowLeft'] || touchState.left;
+    const inputRight = keys['KeyD'] || keys['ArrowRight'] || touchState.right;
+    const canShoot = (keys['Space'] || keys['KeyF'] || touchState.shoot);
+
+    let newX = player.x;
+    let newY = player.y;
+    let moving = false;
+
+    if (inputUp) { player.dir = 'up'; newY -= player.speed; moving = true; }
+    if (inputDown) { player.dir = 'down'; newY += player.speed; moving = true; }
+    if (inputLeft) { player.dir = 'left'; newX -= player.speed; moving = true; }
+    if (inputRight) { player.dir = 'right'; newX += player.speed; moving = true; }
+
+    // Collision with map
+    if (moving) {
+      if (!collideMap(newX, player.y, player.w, player.h)) player.x = newX;
+      if (!collideMap(player.x, newY, player.w, player.h)) player.y = newY;
+    }
+
+    // Clamp to screen
+    player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
+    player.y = Math.max(0, Math.min(canvas.height - player.h, player.y));
+
+    if (canShoot) shoot(player);
+  }
+
+  if (player.cooldown > 0) player.cooldown--;
+
+  // Spawn enemies periodically
+  if (Math.random() < 0.01) spawnEnemy();
+
+  // Update enemies
+  enemies.forEach(e => {
+    if (!e.alive) return;
+    e.cooldown = Math.max(0, e.cooldown - 1);
+
+    // Simple AI: move toward player, avoid walls
+    const dx = (player.x + player.w/2) - (e.x + e.w/2);
+    const dy = (player.y + player.h/2) - (e.y + e.h/2);
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > 0) {
+      const moveX = (dx / dist) * e.speed;
+      const moveY = (dy / dist) * e.speed;
+
+      // Try horizontal then vertical
+      if (!collideMap(e.x + moveX, e.y, e.w, e.h)) e.x += moveX;
+      else if (!collideMap(e.x, e.y + moveY, e.w, e.h)) e.y += moveY;
+
+      // Shoot occasionally
+      if (e.cooldown <= 0 && Math.random() < 0.02) {
+        e.cooldown = 60;
+        shoot(e);
+      }
+    }
+
+    // Keep on screen
+    e.x = Math.max(-e.w, Math.min(canvas.width, e.x));
+    e.y = Math.max(-e.h, Math.min(canvas.height, e.y));
+  });
+
+  // Update bullets
+  bullets.forEach(b => {
+    b.x += b.vx;
+    b.y += b.vy;
+    b.ttl--;
+    if (b.ttl <= 0 || b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+      b.alive = false;
+      return;
+    }
+
+    // Map collision
+    if (collideMapBullet(b)) {
+      b.alive = false;
+      spawnParticles(b.x, b.y);
+      return;
+    }
+
+    // Enemy hit
+    enemies.forEach(enemy => {
+      if (!enemy.alive || !b.alive) return;
+      if (rectIntersect(b, enemy)) {
+        b.alive = false;
+        enemy.alive = false;
+        spawnParticles(enemy.x, enemy.y);
+        score += 100;
+        scoreEl.innerText = 'Score: ' + score;
+      }
+    });
+
+    // Player hit
+    if (player.alive && b.owner !== player && rectIntersect(b, player)) {
+      b.alive = false;
+      playerHit();
+    }
+
+    // Base hit
+    if (b.owner !== player && checkBaseHit(b)) {
+      b.alive = false;
+      gameOver('Base Destroyed!');
+    }
+  });
+
+  // Particles
+  particles.forEach((p, i) => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  });
+
+  bullets = bullets.filter(b => b.alive);
+  enemies = enemies.filter(e => e.alive);
+}
+
+function collideMap(x, y, w, h) {
+  const startCol = Math.floor(x / TILE);
+  const endCol = Math.floor((x + w) / TILE);
+  const startRow = Math.floor(y / TILE);
+  const endRow = Math.floor((y + h) / TILE);
+
+  for (let col = startCol; col <= endCol; col++) {
