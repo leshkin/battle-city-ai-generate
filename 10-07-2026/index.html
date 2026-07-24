@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1"
+    />
+    <meta
+      name="description"
+      content="Canvas-клон классической игры Battle City"
+    />
+    <title>Canvas Battle City</title>
+  </head>
+
+  <body>
+    <main class="game-layout">
+      <section class="game-shell">
+        <div class="canvas-wrapper">
+          <canvas
+            id="game"
+            width="832"
+            height="832"
+            aria-label="Игровое поле"
+          ></canvas>
+
+          <div id="overlay" class="overlay">
+            <h1 id="overlay-title">Canvas Battle City</h1>
+
+            <p id="overlay-text">
+              Стрелки или WASD — движение<br />
+              Space — огонь<br />
+              P — пауза
+            </p>
+
+            <button id="start-button" type="button">
+              Начать игру
+            </button>
+          </div>
+        </div>
+
+        <div class="mobile-controls" aria-label="Экранное управление">
+          <div class="dpad">
+            <button class="control up" data-key="ArrowUp" type="button">
+              ▲
+            </button>
+
+            <button class="control left" data-key="ArrowLeft" type="button">
+              ◀
+            </button>
+
+            <button class="control down" data-key="ArrowDown" type="button">
+              ▼
+            </button>
+
+            <button class="control right" data-key="ArrowRight" type="button">
+              ▶
+            </button>
+          </div>
+
+          <button
+            class="control fire"
+            data-key="Space"
+            type="button"
+            aria-label="Огонь"
+          >
+            FIRE
+          </button>
+        </div>
+      </section>
+
+      <aside class="hud">
+        <h2>Battle City</h2>
+
+        <dl>
+          <div>
+            <dt>Очки</dt>
+            <dd id="score">0</dd>
+          </div>
+
+          <div>
+            <dt>Жизни</dt>
+            <dd id="lives">3</dd>
+          </div>
+
+          <div>
+            <dt>Враги</dt>
+            <dd id="enemies">20</dd>
+          </div>
+
+          <div>
+            <dt>Статус</dt>
+            <dd id="status">Готов</dd>
+          </div>
+        </dl>
+
+        <div class="legend">
+          <p><kbd>WASD</kbd> / <kbd>↑↓←→</kbd> движение</p>
+          <p><kbd>Space</kbd> огонь</p>
+          <p><kbd>P</kbd> пауза</p>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
